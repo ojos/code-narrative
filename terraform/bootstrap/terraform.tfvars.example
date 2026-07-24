@@ -1,0 +1,15 @@
+# このファイルを terraform.tfvars に複製して値を調整する。
+# terraform.tfvars は .gitignore で追跡対象外。
+
+region       = "ap-northeast-1"
+github_owner = "ojos"
+github_repo  = "code-narrative"
+
+# 空にするとアカウントIDを付与して自動命名される
+tfstate_bucket_name = ""
+
+# アカウントの請求通貨に合わせること(JPY 請求でなければ USD 建てで見直す)
+budget_limit_amount = "3000"
+budget_currency     = "JPY"
+
+notification_emails = ["aws+code-narrative@ojos.jp"]

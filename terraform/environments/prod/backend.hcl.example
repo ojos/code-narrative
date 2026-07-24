@@ -1,0 +1,9 @@
+# このファイルを backend.hcl に複製し、bootstrap の出力値で埋める:
+#   terraform -chdir=terraform/bootstrap output -raw tfstate_bucket
+# 使い方:
+#   terraform init -backend-config=backend.hcl
+
+bucket       = "code-narrative-tfstate-XXXXXXXXXXXX"
+region       = "ap-northeast-1"
+use_lockfile = true
+encrypt      = true

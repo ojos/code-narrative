@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo \"exit code: $?\")",
+      "Bash(git -C /workspaces/ojos-code-narrative rev-parse --is-inside-work-tree)",
+      "Bash(git --version)",
+      "Bash(gh --version)",
+      "Bash(gh auth *)",
+      "Bash(terraform version *)",
+      "Bash(grep -rInE 'AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|xoxb-|secret[_-]?access[_-]?key|password\\\\s*[:=]' . --exclude-dir=.git --exclude-dir=sso)",
+      "Bash(git init *)",
+      "Bash(git check-ignore *)",
+      "Bash(git add *)",
+      "Bash(grep -iE '\\\\.terraform/|tfstate|\\\\.tfvars$|docs/sso/')"
+    ]
+  }
+}
