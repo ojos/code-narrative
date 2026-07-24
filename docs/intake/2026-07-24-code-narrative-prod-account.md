@@ -1,0 +1,201 @@
+# Intake: code-narrative 本番用 AWS 子アカウント作成
+
+- 起票日: 2026-07-24
+- 起票者ロール: intake-manager
+- ステータス: **承認済み / 論点解消済み・着手可**
+- 起票先: GitHub issue 未作成（ローカル git リポジトリ・リモートリポジトリともに未整備のため本ファイルで代替）
+
+## intake 判定
+
+| 項目 | 値 |
+|---|---|
+| intake 要否 | 必要 |
+| reason_code | `IMPLEMENTATION_MISSING_MULTIPLE` |
+| 判定時の不足項目 | `goal` / `acceptance` / `priority` / `scope.out` / `constraints` |
+| 充足状況 | Q1〜Q8 の確認により必須項目を充足 |
+
+## intake 票
+
+```yaml
+goal: >
+  ポートフォリオWebサービス "code-narrative" を外部公開するためのAWS子アカウントを、
+  Workloads/Prod OU 配下に統制された状態で新規作成し、
+  デプロイ可能な基盤(サブドメイン委任・OIDC連携)まで整備する
+
+scope.in:
+  - Account Factory による子アカウント作成
+      名称: code-narrative-prod
+      ルートメール: aws+code-narrative@ojos.jp
+  - 作成した子アカウントを既存の Workloads/Prod OU に配置
+  - Identity Center の権限割当整備
+      - ido@ojos.jp が AdministratorAccess でアクセスできる状態にする
+      - 割当はグループ経由とし、ユーザーへの直接割当を残さない
+  - コスト統制
+      - AWS Budgets: 月3,000円(50% / 80% / 100% / 予測超過で通知) (R1)
+      - Cost Anomaly Detection の有効化
+  - DNS 委任
+      - 子アカウントに code-narrative.ojos.jp のホストゾーンを作成
+      - 親ゾーン側に NS レコードを登録して委任
+  - Terraform ブートストラップ資材の作成 (R3)
+      - Terraform state 用 S3 バケット(バージョニング + ロック有効)
+  - GitHub Actions デプロイ基盤 (R4)
+      - OIDC プロバイダー登録
+      - plan 用 IAM ロール(読み取り + state バケットアクセス、PR ブランチから)
+      - apply 用 IAM ロール(書き込み、main ブランチのみ)
+      - 信頼ポリシーを対象リポジトリ・対象ブランチに限定
+
+scope.out:
+  - Webサービス本体の実装およびHTTPS公開(ダミーページ含む)
+  - ACM証明書発行・CloudFront等の配信基盤構築
+  - 開発検証用アカウント(code-narrative-dev)の作成
+  - 外部業務提携メンバーのアクセス受け入れ
+  - アプリケーションリソースの Terraform 実装
+  - Prod OU への SCP 設計・適用(現在 SCP は未設定。別 intake で扱う)
+
+constraints:
+  - 外部IdP(GWS)採用のため、Identity Center 内蔵ディレクトリとの併用は不可
+  - AWS操作者は ido@ojos.jp のみ。GWS喪失時の唯一の脱出口は
+    管理アカウントのルートユーザーであり、その可用性に依存する
+  - AWSアカウントのルートメールは既存アカウントと重複不可
+  - 既存の Control Tower 既定グループ8個は名前と実態を乖離させない。
+    ワークロード用権限が必要な場合は新規グループを1つ追加する
+  - Workloads/Prod OU に SCP は未設定。将来 SCP を設計する際は
+    Bedrock のクロスリージョン推論(us-*)と CloudFront 用 ACM(us-east-1)を
+    ブロックしないリージョン許可設計とすること (R2)
+
+acceptance:
+  1. aws organizations list-accounts-for-parent で code-narrative-prod が
+     Workloads/Prod OU 配下に存在することを確認できる
+  2. ido@ojos.jp がアクセスポータル経由で code-narrative-prod に
+     AdministratorAccess でログインできる
+  3. 当該アカウントの割当がすべてグループ経由であり、
+     ユーザーへの直接割当が 0 件である
+  4. Budgets にしきい値が設定され、通知メールの受信を確認済み
+  5. Cost Anomaly Detection が有効である
+  6. dig NS code-narrative.ojos.jp が子アカウントのホストゾーンの
+     ネームサーバーを返す
+  7. GitHub Actions の PR ブランチから plan 用ロールへの AssumeRole が成功し、
+     aws sts get-caller-identity が想定のロールARNを返す(アクセスキー不使用)
+  8. GitHub Actions の main ブランチから apply 用ロールへの AssumeRole が成功する
+  9. PR ブランチから apply 用ロールへの AssumeRole が失敗する
+ 10. 対象外リポジトリからの AssumeRole が plan / apply いずれも失敗する
+ 11. Terraform state 用 S3 バケットが存在し、バージョニングが有効で、
+     plan / apply 両ロールから読み書きできる
+ 12. 当該アカウントの CloudTrail が有効で、Log Archive へ配信されている
+ 13. 当該アカウントに IAM ユーザーが 0 件である
+
+priority: high
+```
+
+## 確認済みの決定事項
+
+| # | 決定内容 |
+|---|---|
+| Q1 | 案A（Workloads/Prod OU に配置）。同 OU は既存のため新設作業は不要 |
+| Q2 | ルートメールは `aws+code-narrative@ojos.jp`（既存 GWS グループ `aws@ojos.jp` のプラスエイリアス） |
+| Q3 | 本番アカウント 1 つのみ。dev アカウントは対象外 |
+| Q4 | サブドメイン `code-narrative.ojos.jp` を子アカウントへ委任 |
+| Q5 | Budgets しきい値 月3,000円（当初 1,000 円。R1 の SPEC 改訂を受けて確定） |
+| Q6 | GitHub Actions + OIDC 基盤を今回のスコープに含める |
+| Q7 | 完了定義は基盤の完成まで。HTTPS 公開は含めない |
+| Q8 | priority: high |
+
+## 実施タスク順序
+
+| 順 | タスク | 状態 | 備考 |
+|---|---|---|---|
+| **T0** | **開発リポジトリの整備** | 未着手 | 本 intake / SPEC のバージョン管理先。P3 のリポジトリ名・ブランチを確定する前提。詳細は下記「T0 詳細」 |
+| T1 | 子アカウント作成・OU 配置・Identity Center 割当 | 未着手 | `scope.in` 冒頭群 |
+| T2 | Budgets / Cost Anomaly Detection | 未着手 | 月3,000円 |
+| T3 | Route 53 サブドメイン委任 | 未着手 | P2 に依存 |
+| T4 | Terraform state バケット + OIDC 2ロール | 未着手 | T0 完了後（リポジトリ名確定が前提） |
+
+### T0 詳細: 開発リポジトリの整備
+
+- **目的**: 現在ローカル git 未初期化・リモート未作成。SPEC / intake / 今後の IaC・アプリコードの版管理基盤を用意する。
+- **作業**:
+  - `git init`（デフォルトブランチ `main`）
+  - 既存資材（`docs/`, `.ai-playbook/`, `CLAUDE.md` 等）を初期コミット。`.gitignore` の `docs/sso/` 除外が効いていることをコミット前に確認
+  - SPEC §3 に沿ったモノレポ骨子ディレクトリの用意（`apps/api`, `apps/lambda-worker`, `apps/frontend`, `terraform/`）
+  - GitHub リモートリポジトリ作成と push
+- **完了条件**:
+  - `git status` がクリーンで、`docs/sso/` が追跡対象外である
+  - リモートの `main` ブランチに初期コミットが存在する
+  - リポジトリ名とデプロイ対象ブランチが確定し、P3 を解消している
+- **未確定**: GitHub の組織/リポジトリ名（例: `<org>/code-narrative`）、公開/非公開の別。着手時に確定する。
+
+## 着手前の事前条件
+
+| # | 内容 | 状態 |
+|---|---|---|
+| P1 | `aws+code-narrative@ojos.jp` の受信検証 | **解決**（2026-07-24 テスト送信。`aws.ojos.jp` ML 経由で着信確認） |
+| P2 | `ojos.jp` の権威 DNS の管理場所と NS レコード追加権限 | 未確認（T3 の前提） |
+| P3 | GitHub リポジトリ名とデプロイ対象ブランチ | 未確認（T0 で確定） |
+| P4 | 管理アカウントのルートユーザーの MFA・復旧経路 | 未確認 |
+
+## 論点の対応状況（docs/SPEC.md との突き合わせで検出）
+
+承認後に `docs/SPEC.md` を確認した結果、intake の確定値と矛盾する事項が判明した。
+
+| # | 内容 | 状態 |
+|---|---|---|
+| R1 | Budgets しきい値と構成の不整合 | 解決（SPEC を Lambda 構成へ改訂し、しきい値を月 3,000 円で確定） |
+| R2 | リージョン制限 SCP と Bedrock / ACM の衝突 | 解決（Prod OU に SCP 未設定。将来の設計制約として `constraints` へ記録） |
+| R3 | Terraform ブートストラップ資材の漏れ | 解決（state 用 S3 バケットを `scope.in` へ追加） |
+| R4 | OIDC ロールの plan / apply 分離 | 解決（2 ロール構成へ変更し acceptance 7〜11 を拡張） |
+| R5 | `docs/sso/` の機密情報 | 解決（`.gitignore` に `docs/sso/` を追加） |
+
+### R1: Budgets しきい値 月1,000円が構成と整合しない（解決済み）
+
+SPEC の構成（VPC + プライベートサブネット + ECS Fargate 常時稼働 + API Gateway VPC Link + NAT + CloudFront + Cognito + DynamoDB + Bedrock）では、固定費だけで月 1,000 円を大きく超過する。
+
+概算（東京リージョン・月額）:
+
+| 項目 | 概算 |
+|---|---|
+| NAT Gateway（時間課金のみ） | 約 5,000 円 |
+| ECS Fargate 0.25vCPU/0.5GB 常時 1 タスク | 約 1,400 円 |
+| Route 53 ホストゾーン | 約 75 円 |
+| Bedrock / CloudFront / DynamoDB 等 | 従量 |
+
+しきい値 1,000 円では常時アラートが鳴り続け、通知が機能しなくなる。
+
+**対応**: `docs/SPEC.md` を改訂し、REST API を ECS Fargate から API Gateway + Lambda（FastAPI + Mangum）へ変更した。VPC / VPC Link / NAT Gateway が不要となり、固定費は約 6,500 円/月から約 100 円/月（Route 53 ホストゾーン相当）へ低減する。以降の主たる変動費は Bedrock の従量課金となる。
+
+これを踏まえ、**Budgets しきい値を月 3,000 円で確定**する（50 / 80 / 100% および予測超過で通知）。
+
+### R2: リージョン制限 SCP と Bedrock / ACM が衝突する（解決済み）
+
+- SPEC 内の注記のとおり、Anthropic 系モデルはクロスリージョン推論プロファイル（`us.` プレフィックス）での呼び出しが必須であり、米国リージョンへの推論リクエストが発生する
+- CloudFront 用の ACM 証明書は us-east-1 でのみ発行可能
+
+確認の結果、Workloads/Prod OU は存在するのみで **SCP は未設定**であり、現時点の衝突はない。将来 SCP を設計する際の制約として `constraints` へ記録した。
+
+### R3: Terraform ブートストラップ資材が scope.in から漏れている（解決済み）
+
+SPEC ではインフラ一式を Terraform で構築し、state は S3 バックエンド（ロック有効）で管理する方針。手作業と Terraform 管理の境界を次のとおり定義し、`scope.in` を訂正した。
+
+- 今回（コンソール / Account Factory）: アカウント作成、OU 配置、Identity Center 割当、Budgets、Route 53 ホストゾーンと NS 委任、OIDC プロバイダー、plan / apply ロール、**Terraform state 用 S3 バケット**
+- 別 intake（Terraform）: アカウント内のアプリケーションリソース一式
+
+### R4: OIDC ロールを plan 用と apply 用に分離すべき（解決済み）
+
+SPEC の CI/CD は PR で `terraform plan`、main で `terraform apply -auto-approve` を実行する。apply 用ロールは IAM 作成権限を含むほぼ管理者相当の権限となるため、次の 2 ロール構成へ訂正した。
+
+- plan 用: 読み取り専用 + state バケットへのアクセス。PR ブランチから AssumeRole 可
+- apply 用: 書き込み権限。main ブランチのみ AssumeRole 可
+
+acceptance 7〜11 を 2 ロール分の検証へ拡張済み。
+
+### R5: `docs/sso/` 配下の機密情報の取り扱い（解決済み）
+
+`.gitignore` に `docs/sso/` を追加し、追跡対象外とした。
+
+なお `gws.txt` / `aws.txt` を確認したところ、`token` / `secret` / `password` 等のキーワードは含まれていなかった。ただし SAML 署名証明書と IdP 接続情報を含むディレクトリであるため、ディレクトリ単位で除外している。
+
+## 関連
+
+- 仕様書: [SPEC.md](../SPEC.md)
+- テンプレート: [intake-template](../../.ai-playbook/intake/intake-template.md)
+- ロール契約: [intake-manager](../../.ai-playbook/role-contracts/intake-manager.md)
+- 判定根拠: [REASON_CODES](../../.ai-playbook/intake/REASON_CODES.md)

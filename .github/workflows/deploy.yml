@@ -1,0 +1,71 @@
+name: deploy
+
+# PR: terraform plan(plan ロール) / main マージ: terraform apply(apply ロール)
+# AWS 認証は GitHub OIDC。長期アクセスキーは使わない。
+# ロール ARN はリポジトリ変数に設定する:
+#   gh variable set AWS_PLAN_ROLE_ARN  --body <bootstrap の terraform_plan_role_arn>
+#   gh variable set AWS_APPLY_ROLE_ARN --body <bootstrap の terraform_apply_role_arn>
+#   gh variable set TFSTATE_BUCKET     --body <bootstrap の tfstate_bucket>
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/deploy.yml"
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/deploy.yml"
+
+permissions:
+  id-token: write # OIDC トークン発行に必須
+  contents: read
+  pull-requests: write # plan 結果を PR にコメント
+
+env:
+  AWS_REGION: ap-northeast-1
+  TF_WORKING_DIR: terraform/environments/prod
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TFSTATE_BUCKET }}" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform plan -no-color -input=false
+
+  apply:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # GitHub Environments の承認フローで apply を保護する(要設定)
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TFSTATE_BUCKET }}" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve -input=false

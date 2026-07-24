@@ -1,0 +1,51 @@
+{
+  "name": "ojos-code-narrative",
+  "dockerComposeFile": "compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/ojos-code-narrative",
+  "shutdownAction": "stopCompose",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:1": {
+      "configureZsh": true
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "latest",
+      "moby": false,
+      "dockerDashComposeVersion": "latest",
+      "installDockerComposeSwitch": true,
+      "installDockerBuildx": true
+    },
+    "ghcr.io/devcontainers-extra/features/ripgrep:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/devcontainers/features/go:1": {},
+    "ghcr.io/devcontainers/features/python:1": {},
+    "ghcr.io/devcontainers/features/aws-cli:1": {},
+    "ghcr.io/dhoeric/features/google-cloud-cli:1": {},
+    "ghcr.io/devcontainers/features/terraform:1": {}
+  },
+  "remoteEnv": {
+    "GITHUB_TOKEN_OJOS": "${localEnv:GITHUB_TOKEN_OJOS}",
+    "GITHUB_OWNER_OJOS": "${localEnv:GITHUB_OWNER_OJOS}",
+    "GIT_AUTHOR_NAME_OJOS": "${localEnv:GIT_AUTHOR_NAME_OJOS}",
+    "GIT_AUTHOR_EMAIL_OJOS": "${localEnv:GIT_AUTHOR_EMAIL_OJOS}",
+    "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
+    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+  },
+  "postCreateCommand": "bash scripts/install-ai-tools.sh",
+  "postAttachCommand": "bash scripts/on-attach.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "golang.go",
+        "amazonwebservices.aws-toolkit-vscode",
+        "GoogleCloudTools.cloudcode",
+        "hashicorp.terraform",
+        "anthropic.claude-code",
+        "Google.gemini-cli-vscode-ide-companion",
+        "ms-azuretools.vscode-containers"
+      ]
+    }
+  }
+}
