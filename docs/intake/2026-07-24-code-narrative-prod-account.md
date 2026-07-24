@@ -104,11 +104,13 @@ priority: high
 
 | 順 | タスク | 状態 | 備考 |
 |---|---|---|---|
-| **T0** | **開発リポジトリの整備** | 未着手 | 本 intake / SPEC のバージョン管理先。P3 のリポジトリ名・ブランチを確定する前提。詳細は下記「T0 詳細」 |
-| T1 | 子アカウント作成・OU 配置・Identity Center 割当 | 未着手 | `scope.in` 冒頭群 |
-| T2 | Budgets / Cost Anomaly Detection | 未着手 | 月3,000円 |
-| T3 | Route 53 サブドメイン委任 | 未着手 | P2 に依存 |
-| T4 | Terraform state バケット + OIDC 2ロール | 未着手 | T0 完了後（リポジトリ名確定が前提） |
+| **T0** | **開発リポジトリの整備** | **完了**（2026-07-24） | `ojos/code-narrative`（public）。詳細は下記「T0 詳細」 |
+| T1 | 子アカウント作成・OU 配置・Identity Center 割当 | 未着手 | Control Tower Account Factory で発行。`scope.in` 冒頭群 |
+| T2 | Budgets / Cost Anomaly Detection | Terraform 記述済 | `terraform/bootstrap/cost.tf`。apply 待ち（月3,000円） |
+| T3 | Route 53 サブドメイン委任 | Terraform 記述済 | `terraform/environments/prod/dns.tf`。親ゾーン側 NS 登録は P2 依存 |
+| T4 | Terraform state バケット + OIDC 2ロール | Terraform 記述済 | `terraform/bootstrap/`。子アカウント作成後に手適用 |
+
+Terraform 方針: T1（アカウント発行）は Control Tower Account Factory の一度きりの操作のため手作業とし、T2〜T4 および以降のアプリ基盤（SPEC Phase 2）はすべて Terraform で管理する。適用順序は `terraform/README.md` を参照。
 
 ### T0 詳細: 開発リポジトリの整備
 
@@ -118,11 +120,15 @@ priority: high
   - 既存資材（`docs/`, `.ai-playbook/`, `CLAUDE.md` 等）を初期コミット。`.gitignore` の `docs/sso/` 除外が効いていることをコミット前に確認
   - SPEC §3 に沿ったモノレポ骨子ディレクトリの用意（`apps/api`, `apps/lambda-worker`, `apps/frontend`, `terraform/`）
   - GitHub リモートリポジトリ作成と push
-- **完了条件**:
-  - `git status` がクリーンで、`docs/sso/` が追跡対象外である
-  - リモートの `main` ブランチに初期コミットが存在する
-  - リポジトリ名とデプロイ対象ブランチが確定し、P3 を解消している
-- **未確定**: GitHub の組織/リポジトリ名（例: `<org>/code-narrative`）、公開/非公開の別。着手時に確定する。
+- **完了条件（すべて達成）**:
+  - `git status` がクリーンで、`docs/sso/` が追跡対象外である ✓
+  - リモートの `main` ブランチに初期コミットが存在する ✓（`ojos/code-narrative`）
+  - リポジトリ名とデプロイ対象ブランチが確定し、P3 を解消している ✓
+- **確定事項**: リポジトリ `ojos/code-narrative`（public）。デプロイ対象ブランチは `main`（apply）/ PR（plan）。
+- **成果物**:
+  - モノレポ骨子 `apps/{api,lambda-worker,frontend}`
+  - Terraform `terraform/{bootstrap,environments/prod,modules}`（`fmt` / `validate` 済）
+  - CI/CD `.github/workflows/deploy.yml`（OIDC、PR=plan / main=apply）
 
 ## 着手前の事前条件
 
@@ -130,7 +136,7 @@ priority: high
 |---|---|---|
 | P1 | `aws+code-narrative@ojos.jp` の受信検証 | **解決**（2026-07-24 テスト送信。`aws.ojos.jp` ML 経由で着信確認） |
 | P2 | `ojos.jp` の権威 DNS の管理場所と NS レコード追加権限 | 未確認（T3 の前提） |
-| P3 | GitHub リポジトリ名とデプロイ対象ブランチ | 未確認（T0 で確定） |
+| P3 | GitHub リポジトリ名とデプロイ対象ブランチ | **解決**（`ojos/code-narrative` / main=apply, PR=plan） |
 | P4 | 管理アカウントのルートユーザーの MFA・復旧経路 | 未確認 |
 
 ## 論点の対応状況（docs/SPEC.md との突き合わせで検出）
