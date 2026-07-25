@@ -27,3 +27,8 @@ output "dlq_name" {
   description = "DLQ 名"
   value       = aws_sqs_queue.dlq.name
 }
+
+output "alerts_topic_arn" {
+  description = "DLQ アラーム通知用 SNS トピック ARN"
+  value       = aws_sns_topic.alerts.arn
+}

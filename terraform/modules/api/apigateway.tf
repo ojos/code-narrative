@@ -5,6 +5,16 @@
 resource "aws_apigatewayv2_api" "this" {
   name          = "${var.function_name}-http"
   protocol_type = "HTTP"
+
+  # SPA は CloudFront の別オリジンから execute-api を呼ぶため CORS が必須。
+  # HTTP API は cors_configuration がある場合、preflight(OPTIONS)を JWT Authorizer の
+  # 前段で自動応答するため、$default ルートに JWT を付けても preflight は 401 にならない。
+  cors_configuration {
+    allow_origins = var.cors_allow_origins
+    allow_headers = ["authorization", "content-type"]
+    allow_methods = ["GET", "POST", "OPTIONS"]
+    max_age       = 3600
+  }
 }
 
 resource "aws_apigatewayv2_integration" "lambda" {

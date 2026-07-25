@@ -15,6 +15,6 @@ resource "aws_cloudwatch_metric_alarm" "dlq_messages" {
     QueueName = aws_sqs_queue.dlq.name
   }
 
-  alarm_actions = var.alarm_actions
-  ok_actions    = var.alarm_actions
+  alarm_actions = concat([aws_sns_topic.alerts.arn], var.alarm_actions)
+  ok_actions    = concat([aws_sns_topic.alerts.arn], var.alarm_actions)
 }

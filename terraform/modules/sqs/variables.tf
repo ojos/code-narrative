@@ -38,7 +38,13 @@ variable "dlq_alarm_threshold" {
 }
 
 variable "alarm_actions" {
-  description = "アラーム発報時の通知先(SNS トピック ARN 等)。既定は通知先なし"
+  description = "モジュール内 SNS トピックに加えて通知する追加のアクション ARN(任意)"
   type        = list(string)
   default     = []
+}
+
+variable "alarm_email" {
+  description = "DLQ アラーム通知先メールアドレス。設定時のみメール購読を作成する(値は tfvars で管理)"
+  type        = string
+  default     = ""
 }

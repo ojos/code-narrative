@@ -61,6 +61,7 @@ module "sqs" {
   dlq_name                   = "${local.name_prefix}-jobs-dlq"
   visibility_timeout_seconds = local.sqs_visibility_timeout
   max_receive_count          = var.sqs_max_receive_count
+  alarm_email                = var.alarm_email
 }
 
 # --- Cognito(User Pool / Client(Auth Code + PKCE) / Hosted UI) ---
@@ -92,7 +93,8 @@ module "api" {
   cognito_client_id    = module.cognito.client_id
   cognito_issuer       = module.cognito.issuer
 
-  bedrock_model_ids = local.bedrock_model_ids
+  bedrock_model_ids  = local.bedrock_model_ids
+  cors_allow_origins = var.cors_allow_origins
 }
 
 # --- Worker(Go Lambda + SQS イベントソースマッピング + Bedrock 権限) ---
@@ -123,9 +125,10 @@ module "frontend" {
     aws.us_east_1 = aws.us_east_1
   }
 
-  bucket_name = local.frontend_bucket_name
-  domain_name = local.frontend_domain
-  zone_id     = aws_route53_zone.subdomain.zone_id
+  bucket_name          = local.frontend_bucket_name
+  domain_name          = local.frontend_domain
+  zone_id              = aws_route53_zone.subdomain.zone_id
+  dns_delegation_ready = var.dns_delegation_ready
 }
 
 # --- Analytics(集計 Lambda + Step Functions + EventBridge Scheduler) ---

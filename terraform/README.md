@@ -63,13 +63,29 @@ terraform init -migrate-state \
 
 ### 2. environments/prod（以降は CI/CD が適用）
 
+親ゾーン `ojos.jp` への NS 委任が「apply 後にさくら会員メニューで手動登録」運用のため、
+**二段階 apply** で行う（委任前のフル apply は ACM の DNS 検証がタイムアウトして失敗するため）。
+
 ```bash
 cd terraform/environments/prod
 terraform init -backend-config=backend.hcl   # backend.hcl.example を複製して作成
+
+# 段階1: NS 委任前。dns_delegation_ready=false(既定)で apply。
+#   ACM 検証待機・独自ドメイン配信・A/AAAA は作られず、CloudFront は
+#   *.cloudfront.net の暫定配信。ゾーンと name_servers 出力は得られる。
 terraform apply
+
+# 段階2: 委任を実施。
+terraform output name_servers   # 得た NS 4 件をさくら会員メニューで親 ojos.jp に登録
+#   → 委任反映後に独自ドメイン配信を完成させる。
+terraform apply -var="dns_delegation_ready=true"
 ```
 
-`terraform output name_servers` で得た NS レコードを、親ゾーン `ojos.jp` 側に登録してサブドメインを委任する（親ゾーンの管理先は intake の P2 に依存）。
+`dns_delegation_ready=false`（段階1）で作成されるもの / されないもの:
+
+- 作成される: Route53 委任ゾーン、ECR、DynamoDB、SQS(+DLQ アラーム+SNS)、Cognito、
+  API Gateway(+Lambda)、Worker、Step Functions/Scheduler、S3、CloudFront（デフォルト証明書・独自ドメインなし）、ACM 証明書リソースと検証用 DNS レコード（発行はするが検証は未完了）
+- 作成されない: `aws_acm_certificate_validation`（検証待機）、CloudFront の独自ドメイン紐付け（ACM 証明書・エイリアス）、`code-narrative.ojos.jp` の A/AAAA レコード
 
 ## 認証方針
 

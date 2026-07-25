@@ -55,3 +55,27 @@ variable "sqs_max_receive_count" {
   type        = number
   default     = 5
 }
+
+variable "dns_delegation_ready" {
+  description = <<-EOT
+    親ゾーン ojos.jp への NS 委任が完了しているか(二段階 apply の切替)。
+    false(既定): まずこの状態で apply し `terraform output name_servers` を取得、
+                 さくら会員メニューで親 ojos.jp に NS 委任する。ACM 検証・独自ドメイン
+                 配信・A/AAAA は作成されず、CloudFront は *.cloudfront.net で暫定配信。
+    true       : NS 委任後に指定して再 apply し、ACM 検証と独自ドメイン配信を完成させる。
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "cors_allow_origins" {
+  description = "API Gateway の CORS で許可するフロントエンド公開オリジン"
+  type        = list(string)
+  default     = ["https://code-narrative.ojos.jp"]
+}
+
+variable "alarm_email" {
+  description = "DLQ アラーム通知先メールアドレス。空なら購読を作らない(値は tfvars で管理しハードコードしない)"
+  type        = string
+  default     = ""
+}

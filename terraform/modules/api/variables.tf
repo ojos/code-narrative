@@ -71,6 +71,11 @@ variable "bedrock_model_ids" {
   type        = list(string)
 }
 
+variable "cors_allow_origins" {
+  description = "CORS で許可するフロントエンド公開オリジン(SPA が別オリジンの execute-api を叩くため)"
+  type        = list(string)
+}
+
 variable "extra_environment" {
   description = "追加の環境変数(任意)"
   type        = map(string)

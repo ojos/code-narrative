@@ -18,7 +18,10 @@ resource "aws_cloudfront_distribution" "this" {
   comment             = "code-narrative frontend"
   default_root_object = var.default_root_object
   price_class         = var.price_class
-  aliases             = [var.domain_name]
+
+  # 独自ドメイン(エイリアス)は ACM 証明書とセットでのみ有効。NS 委任完了前は
+  # エイリアスを付けず *.cloudfront.net の暫定配信とする。
+  aliases = var.dns_delegation_ready ? [var.domain_name] : []
 
   origin {
     domain_name              = aws_s3_bucket.site.bucket_regional_domain_name
@@ -58,9 +61,12 @@ resource "aws_cloudfront_distribution" "this" {
     }
   }
 
+  # NS 委任完了前(dns_delegation_ready=false)は CloudFront デフォルト証明書で暫定配信し、
+  # 委任・ACM 検証完了後(true)に独自ドメイン用 ACM 証明書へ切り替える。
   viewer_certificate {
-    acm_certificate_arn      = aws_acm_certificate_validation.cert.certificate_arn
-    ssl_support_method       = "sni-only"
-    minimum_protocol_version = "TLSv1.2_2021"
+    cloudfront_default_certificate = var.dns_delegation_ready ? null : true
+    acm_certificate_arn            = one(aws_acm_certificate_validation.cert[*].certificate_arn)
+    ssl_support_method             = var.dns_delegation_ready ? "sni-only" : null
+    minimum_protocol_version       = var.dns_delegation_ready ? "TLSv1.2_2021" : null
   }
 }
