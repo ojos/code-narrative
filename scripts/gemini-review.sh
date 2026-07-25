@@ -37,6 +37,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# プロジェクト固有 .env を優先読み込み（ホスト env を上書き）。非対話実行でも効かせる。
+__SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/load-project-env.sh
+. "$__SCRIPT_DIR/load-project-env.sh"
+
 command -v gemini >/dev/null 2>&1 || {
   echo "error: gemini CLI not found. run scripts/install-ai-tools.sh" >&2
   exit 1
