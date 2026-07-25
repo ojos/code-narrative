@@ -92,3 +92,44 @@ def test_create_requires_authentication(
     response = client.post("/api/v1/narratives", json=valid_payload)
 
     assert response.status_code == 401
+
+
+def test_create_rejects_oversized_custom_prompt_with_422(
+    client: TestClient,
+    auth_headers: Callable[[str], dict[str, str]],
+    valid_payload: dict[str, str],
+) -> None:
+    """custom_prompt が上限（2000 文字）を超える場合は 422 を返す。"""
+
+    payload = dict(valid_payload)
+    payload["custom_prompt"] = "あ" * 2001
+
+    response = client.post(
+        "/api/v1/narratives", json=payload, headers=auth_headers("user-1")
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_accepts_custom_prompt_at_limit_and_empty(
+    client: TestClient,
+    auth_headers: Callable[[str], dict[str, str]],
+    valid_payload: dict[str, str],
+) -> None:
+    """custom_prompt が上限ちょうど、または未指定なら従来どおり 202 で受理する。"""
+
+    at_limit = dict(valid_payload)
+    at_limit["custom_prompt"] = "あ" * 2000
+    response_at_limit = client.post(
+        "/api/v1/narratives", json=at_limit, headers=auth_headers("user-1")
+    )
+    assert response_at_limit.status_code == 202
+
+    without_prompt = {
+        "repo_url": valid_payload["repo_url"],
+        "model_id": valid_payload["model_id"],
+    }
+    response_without = client.post(
+        "/api/v1/narratives", json=without_prompt, headers=auth_headers("user-1")
+    )
+    assert response_without.status_code == 202

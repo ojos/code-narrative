@@ -23,7 +23,14 @@ class CreateNarrativeRequest(BaseModel):
     """
 
     repo_url: str = Field(..., description="https://github.com/{owner}/{repo} 形式")
-    custom_prompt: str = Field(default="", description="世界観・スタイル指定")
+    custom_prompt: str = Field(
+        default="",
+        max_length=2000,
+        description=(
+            "世界観・スタイル指定。SQS(256KB)/DynamoDB(400KB) 上限を大きく下回る"
+            "安全値として最大 2000 文字に制限（超過は 422）"
+        ),
+    )
     model_id: str = Field(..., description="許可モデルホワイトリスト内の ID")
 
 
