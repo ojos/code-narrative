@@ -51,6 +51,7 @@ jobs:
       terraform: ${{ steps.filter.outputs.terraform }}
       api: ${{ steps.filter.outputs.api }}
       worker: ${{ steps.filter.outputs.worker }}
+      stats: ${{ steps.filter.outputs.stats }}
       frontend: ${{ steps.filter.outputs.frontend }}
       workflow: ${{ steps.filter.outputs.workflow }}
     steps:
@@ -65,6 +66,8 @@ jobs:
               - 'apps/api/**'
             worker:
               - 'apps/lambda-worker/**'
+            stats:
+              - 'apps/lambda-stats/**'
             frontend:
               - 'apps/frontend/**'
             workflow:
@@ -169,6 +172,25 @@ jobs:
         run: go test ./...
       - name: Build container (no push)
         run: DOCKER_BUILDKIT=1 docker build -t code-narrative-worker:ci apps/lambda-worker
+
+  # 集計 Lambda: コンテナ build(push なし) + go test。
+  build-stats:
+    if: >-
+      github.event_name == 'pull_request' &&
+      (needs.changes.outputs.stats == 'true' || needs.changes.outputs.workflow == 'true')
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: apps/lambda-stats/go.sum
+      - name: Run go test
+        working-directory: apps/lambda-stats
+        run: go test ./...
+      - name: Build container (no push)
+        run: DOCKER_BUILDKIT=1 docker build -t code-narrative-stats:ci apps/lambda-stats
 
   # Frontend: build + lint。frontend アプリ実装(Phase 3 / T4)が入るまではガードして空振りさせる。
   build-frontend:
