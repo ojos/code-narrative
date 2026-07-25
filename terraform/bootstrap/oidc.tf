@@ -107,9 +107,13 @@ data "aws_iam_policy_document" "apply_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
+      # apply ジョブは deploy.yml で `environment: production` を使うため、OIDC の sub は
+      # `repo:...:environment:production` になる(`:ref:refs/heads/main` ではない)。
+      # main 限定は environment の deployment branch policy と、ワークフローの
+      # `if: github.ref == 'refs/heads/main'` で担保する。
       values = [
-        "${local.repo_sub_legacy}:ref:refs/heads/main",
-        "${local.repo_sub_immutable}:ref:refs/heads/main",
+        "${local.repo_sub_legacy}:environment:production",
+        "${local.repo_sub_immutable}:environment:production",
       ]
     }
   }
