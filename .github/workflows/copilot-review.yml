@@ -1,0 +1,36 @@
+name: copilot-review
+
+# PR 作成時に一度だけ GitHub Copilot へコードレビューを自動要求する（リモート最終ゲート）。
+# 規範: .ai-playbook/review-workflow.md（リモート最終ゲートは 1 回だけ要求する）。
+#
+# 前提:
+#   - リポジトリ所有者の Copilot サブスクリプションで「Copilot code review」が有効なこと。
+#     無効だと reviewers 要求が 422 で失敗する。
+#   - 既定の GITHUB_TOKEN で要求できない場合は、リポジトリ Secrets に COPILOT_REVIEW_TOKEN
+#     （pull-requests 書き込み権限を持つ PAT）を設定すれば自動で切り替わる。
+#
+# 一度だけ: types を opened に限定し、PR 更新（synchronize）では再要求しない。
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  request-copilot-review:
+    runs-on: ubuntu-latest
+    # フォークからの PR は書き込みトークンを持たないためスキップする。
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Request a review from Copilot
+        env:
+          GH_TOKEN: ${{ secrets.COPILOT_REVIEW_TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api --method POST \
+            "repos/${REPO}/pulls/${PR_NUMBER}/requested_reviewers" \
+            -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
