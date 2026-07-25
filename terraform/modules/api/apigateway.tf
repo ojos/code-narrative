@@ -57,6 +57,16 @@ resource "aws_apigatewayv2_route" "app" {
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
+# 外部死活監視用の認証不要ルート。$default(catch-all)を廃止したため、明示ルートが
+# 無いと API Gateway 経由の /health が 404 になる。FastAPI 側の /health は認証を
+# 要求しないので、ここでも authorization_type = "NONE" とする。
+resource "aws_apigatewayv2_route" "health" {
+  api_id             = aws_apigatewayv2_api.this.id
+  route_key          = "GET /health"
+  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+  authorization_type = "NONE"
+}
+
 resource "aws_cloudwatch_log_group" "access" {
   name              = "/aws/apigateway/${var.function_name}"
   retention_in_days = var.log_retention_days

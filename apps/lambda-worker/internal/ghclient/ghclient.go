@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -87,10 +88,29 @@ func New(token string) *Client {
 	}
 }
 
+// ownerRepoPattern は GitHub が owner / リポジトリ名に許容する文字種。
+//
+// ホストは github.com に固定しているため SSRF には当たらないが、抽出した値は
+// codeload / REST API の URL パスへそのまま埋め込むため、想定外の文字（"/" や
+// ".." など）を早期に弾いて堅牢化する。
+var ownerRepoPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// isValidSegment は owner / repo として受理できるセグメントかを判定する。
+//
+// 文字種に加えて "." と ".." を明示的に弾く。両者は許容文字のみで構成される
+// ため、パターン一致だけではカレント／親ディレクトリ参照が通ってしまう。
+func isValidSegment(s string) bool {
+	if s == "." || s == ".." {
+		return false
+	}
+	return ownerRepoPattern.MatchString(s)
+}
+
 // ParseRepoURL は repo_url から owner と repo を抽出し検証する。
 //
 // 受理するのはホストが github.com で、パスが厳密に 2 セグメント
-// （owner/repo）の URL のみ。末尾の ".git" は除去する。
+// （owner/repo）の URL のみ。末尾の ".git" は除去する。owner / repo は
+// GitHub の許容文字種（英数字と "." "_" "-"）に一致する必要がある。
 func ParseRepoURL(rawURL string) (owner, repo string, err error) {
 	u, perr := url.Parse(strings.TrimSpace(rawURL))
 	if perr != nil {
@@ -105,6 +125,12 @@ func ParseRepoURL(rawURL string) (owner, repo string, err error) {
 	}
 	owner = segments[0]
 	repo = strings.TrimSuffix(segments[1], ".git")
+	if !isValidSegment(owner) {
+		return "", "", fmt.Errorf("%w: owner=%q", ErrInvalidRepoURL, owner)
+	}
+	if !isValidSegment(repo) {
+		return "", "", fmt.Errorf("%w: repo=%q", ErrInvalidRepoURL, repo)
+	}
 	return owner, repo, nil
 }
 

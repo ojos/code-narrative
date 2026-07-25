@@ -6,24 +6,36 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
 func TestParseRepoURL(t *testing.T) {
+	// errContains は「どの検証で弾かれたか」まで固定したいケースで指定する。
+	// 空なら ErrInvalidRepoURL であることのみを検証する。
+	//
+	// 文字種検証のケースでは必須。パーセントエンコードされた "/" は url.Parse が
+	// デコードするためセグメント数が増え、意図した文字種検証ではなくセグメント数
+	// チェックで弾かれてしまう（テストが別の理由で緑になる）。
 	cases := []struct {
-		name      string
-		in        string
-		owner     string
-		repo      string
-		wantError bool
+		name        string
+		in          string
+		owner       string
+		repo        string
+		wantError   bool
+		errContains string
 	}{
-		{"正常", "https://github.com/ojos/code-narrative", "ojos", "code-narrative", false},
-		{"末尾.git除去", "https://github.com/ojos/code-narrative.git", "ojos", "code-narrative", false},
-		{"末尾スラッシュ", "https://github.com/ojos/code-narrative/", "ojos", "code-narrative", false},
-		{"ホスト不正", "https://gitlab.com/ojos/repo", "", "", true},
-		{"http不可", "http://github.com/ojos/repo", "", "", true},
-		{"セグメント過多", "https://github.com/ojos/repo/tree/main", "", "", true},
-		{"セグメント不足", "https://github.com/ojos", "", "", true},
+		{"正常", "https://github.com/ojos/code-narrative", "ojos", "code-narrative", false, ""},
+		{"末尾.git除去", "https://github.com/ojos/code-narrative.git", "ojos", "code-narrative", false, ""},
+		{"末尾スラッシュ", "https://github.com/ojos/code-narrative/", "ojos", "code-narrative", false, ""},
+		{"ホスト不正", "https://gitlab.com/ojos/repo", "", "", true, "host="},
+		{"http不可", "http://github.com/ojos/repo", "", "", true, "host="},
+		{"セグメント過多", "https://github.com/ojos/repo/tree/main", "", "", true, "path="},
+		{"セグメント不足", "https://github.com/ojos", "", "", true, "path="},
+		{"owner に許容外文字", "https://github.com/oj@os/repo", "", "", true, "owner="},
+		{"repo に許容外文字", "https://github.com/ojos/re%20po", "", "", true, "repo="},
+		{"repo が親ディレクトリ参照", "https://github.com/ojos/..", "", "", true, "repo="},
+		{"許容記号は通す", "https://github.com/o-j.o_s/re-po.name_1", "o-j.o_s", "re-po.name_1", false, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -31,6 +43,9 @@ func TestParseRepoURL(t *testing.T) {
 			if c.wantError {
 				if !errors.Is(err, ErrInvalidRepoURL) {
 					t.Fatalf("ErrInvalidRepoURL を期待したが: %v", err)
+				}
+				if c.errContains != "" && !strings.Contains(err.Error(), c.errContains) {
+					t.Errorf("エラーが %q を含むことを期待したが: %v", c.errContains, err)
 				}
 				return
 			}
