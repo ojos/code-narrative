@@ -41,6 +41,9 @@ Lambda はコンテナイメージ（ECR）を参照するが、初回 apply 時
 
 > 集計 Lambda（`analytics`）のアプリ本体は別タスクで実装・push する前提。本スタックは
 > インフラ（関数・ロール・状態機械・スケジュール）のみを構築する。
+> `apps/lambda-stats` 未実装のため既定では **`enable_analytics=false`** とし、stats ECR /
+> Lambda / Step Functions / Scheduler を作らない（イメージ無しでも全体 apply が成功）。
+> stats アプリ実装後に `-var="enable_analytics=true"` で有効化する。
 
 ## 適用順序
 

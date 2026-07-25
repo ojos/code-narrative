@@ -41,7 +41,10 @@ module "ecr_worker" {
   repository_name = "${local.name_prefix}-worker"
 }
 
+# stats(集計バッチ)は apps/lambda-stats 未実装でイメージが存在しないため、既定では作らない。
+# stats アプリ実装後に enable_analytics=true で ECR 先行作成 → image push → 有効化する。
 module "ecr_stats" {
+  count           = var.enable_analytics ? 1 : 0
   source          = "../../modules/ecr"
   repository_name = "${local.name_prefix}-stats"
 }
@@ -132,11 +135,15 @@ module "frontend" {
 }
 
 # --- Analytics(集計 Lambda + Step Functions + EventBridge Scheduler) ---
+# stats アプリ(apps/lambda-stats)実装後に enable_analytics=true で有効化する。
+# 既定(false)では stats ECR / Lambda / Step Functions / Scheduler を作らないため、
+# イメージ未 push でも全体 apply が成功する。
 
 module "analytics" {
+  count           = var.enable_analytics ? 1 : 0
   source          = "../../modules/analytics"
   name_prefix     = local.name_prefix
-  stats_image_uri = "${module.ecr_stats.repository_url}:${var.stats_image_tag}"
+  stats_image_uri = "${module.ecr_stats[0].repository_url}:${var.stats_image_tag}"
 
   dynamodb_table_name = module.dynamodb.table_name
   dynamodb_table_arn  = module.dynamodb.table_arn
