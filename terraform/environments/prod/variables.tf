@@ -11,12 +11,11 @@ variable "subdomain" {
 }
 
 variable "bedrock_model_ids" {
-  description = "許可モデルホワイトリスト(SPEC §4⑤)。us. プレフィックスはクロスリージョン推論プロファイル"
+  description = "許可モデルホワイトリスト(SPEC §4⑤)。地理スコープ付き ID(jp. 等)は推論プロファイル。デプロイ先 ap-northeast-1(東京)で提供されるモデルに限定"
   type        = list(string)
   default = [
-    "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
     "amazon.nova-lite-v1:0",
-    "us.meta.llama3-3-70b-instruct-v1:0",
   ]
 }
 

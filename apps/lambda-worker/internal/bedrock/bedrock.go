@@ -26,12 +26,13 @@ const (
 
 // AllowedModels は呼び出しを許可するモデル ID のホワイトリスト（SPEC §4⑤）。
 //
-// Anthropic / Meta の近年モデルはクロスリージョン推論プロファイル ID
-// （"us." プレフィックス）での呼び出しが必須。
+// デプロイ先 ap-northeast-1（東京）で実際に提供されるモデルに限定する。
+// Claude は東京では "jp." 地域推論プロファイル ID での呼び出しが必須
+// （"us." / "global." は不可）。Llama 3.3 70B は東京で推論プロファイル提供が
+// ないため除外する。
 var AllowedModels = map[string]struct{}{
-	"us.anthropic.claude-sonnet-4-5-20250929-v1:0": {},
+	"jp.anthropic.claude-sonnet-4-5-20250929-v1:0": {},
 	"amazon.nova-lite-v1:0":                        {},
-	"us.meta.llama3-3-70b-instruct-v1:0":           {},
 }
 
 // ErrModelNotAllowed はホワイトリスト外の model_id が指定された場合に返る。
