@@ -49,11 +49,11 @@ variable "stats_image_tag" {
 variable "enable_analytics" {
   description = <<-EOT
     集計バッチ(stats Lambda / Step Functions / Scheduler / stats ECR)を作成するか。
-    false(既定): apps/lambda-stats 未実装でイメージが無いため作らない(全体 apply が成功)。
-    true       : stats アプリ実装後に有効化(ECR 先行作成 → image push → apply)。
+    apps/lambda-stats 実装済み(#21)のため既定で有効。
+    無効化すると stats 系リソースは作成されない。
   EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "worker_max_concurrency" {
