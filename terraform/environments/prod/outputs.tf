@@ -26,8 +26,8 @@ output "ecr_worker_repository_url" {
 }
 
 output "ecr_stats_repository_url" {
-  description = "集計 Lambda イメージの ECR リポジトリ URL(enable_analytics=false のとき null)"
-  value       = one(module.ecr_stats[*].repository_url)
+  description = "集計 Lambda イメージの ECR リポジトリ URL(CI の push 先。常に有効)"
+  value       = module.ecr_stats.repository_url
 }
 
 output "api_function_name" {
