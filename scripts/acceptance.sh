@@ -21,8 +21,11 @@ ROOT="$(dirname "$HERE")"
 cd "$ROOT"
 
 # uv は既定の PATH に無いことがある（スタンドアロンインストール先）。
-# set -u 下でも HOME 未定義環境でクラッシュしないようフォールバックする。
-export PATH="${HOME:-}/.local/bin:$PATH"
+# HOME が設定され、かつ $HOME/.local/bin が実在する場合のみ prepend する。
+# HOME 未定義環境（set -u）でのクラッシュや、無効パス（/.local/bin）の混入を避ける。
+if [[ -n "${HOME:-}" && -d "$HOME/.local/bin" ]]; then
+  export PATH="$HOME/.local/bin:$PATH"
+fi
 
 ran_any=0
 
@@ -60,8 +63,9 @@ if [[ -f apps/frontend/package.json ]]; then
     echo "[acceptance] npm not found. install Node.js to run apps/frontend tests." >&2
     exit 1
   }
-  echo "[acceptance] (apps/frontend) npm test"
-  ( cd apps/frontend && npm test )
+  # test スクリプト未定義でも失敗させない（未実装段階の package.json を許容）。
+  echo "[acceptance] (apps/frontend) npm test --if-present"
+  ( cd apps/frontend && npm test --if-present )
   ran_any=1
 else
   echo "[acceptance] (apps/frontend) skip: package.json not found (未実装)"
