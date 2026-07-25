@@ -108,7 +108,7 @@ priority: high
 | **T0.5** | **OU の Control Tower 登録（整備）** | **完了**（2026-07-25） | Workloads / Prod のベースラインが有効化済み |
 | T1 | 子アカウント作成・OU 配置・Identity Center 割当 | **アカウント発行完了**（2026-07-25） | `code-narrative-prod`（`016647419566`）が Prod OU 配下でエンロール済（統制有効・CTベースライン有効）。残: ido のログイン確認と直接割当の是正 |
 | T2 | Budgets / Cost Anomaly Detection | **完了**（2026-07-25） | 月20USD(≒3,000円)。Cost Anomaly 有効。`terraform/bootstrap` apply 済 |
-| T3 | Route 53 サブドメイン委任 | 未着手 | AWS 側(子ゾーン)は `terraform/environments/prod` で Terraform 管理。さくら側(親ゾーン NS 登録)は**手動**(標準さくらのDNS は Terraform 非対応) |
+| T3 | Route 53 サブドメイン委任 | **AWS側完了 / さくら手動NS待ち**（2026-07-25） | `code-narrative.ojos.jp` ホストゾーン作成済(zone `Z09250083F726R3CRZ4M7`)。NS 4件をさくら会員メニューに手動登録 → `dig NS` で検証すれば完了 |
 | T4 | Terraform state バケット + OIDC 2ロール | **完了**（2026-07-25） | `terraform/bootstrap` apply 済・state を S3(`code-narrative-tfstate-016647419566`)へ移行済。GitHub 変数3つ登録済 |
 
 ### T0.5 詳細: OU の Control Tower 登録（整備）
