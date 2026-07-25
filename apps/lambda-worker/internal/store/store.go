@@ -27,10 +27,17 @@ const (
 	statusFailed     = "failed"
 )
 
-// ErrAlreadyProcessing は processing リースが有効な別ワーカーが処理中、または
-// 既に completed/failed のため processing を獲得できなかった場合に返る
-// （at-least-once 配信での二重処理を冪等にスキップするための番兵）。
+// ErrAlreadyProcessing は「レコードは存在するが processing を獲得できない」場合に返る。
+// 具体的には processing リースが有効な別ワーカーが処理中、または既に
+// completed/failed のケース。冪等にスキップすべき正常系の番兵。
 var ErrAlreadyProcessing = errors.New("ジョブは処理中（リース有効）または処理済みです")
+
+// ErrRecordNotFound は条件付き更新の対象レコードが存在しなかった場合に返る。
+//
+// 生産者（API）の書き込みと SQS 配信の順序が逆転した等の一時的事象であり得るため、
+// スキップ（サイレント削除）せず一時障害として再配信させ、恒久的に欠落する場合は
+// DLQ で可視化する。ErrAlreadyProcessing とは明確に区別する。
+var ErrRecordNotFound = errors.New("ジョブレコードが存在しません")
 
 // DynamoAPI は本パッケージが必要とする DynamoDB 操作の最小インターフェイス。
 //
@@ -65,9 +72,11 @@ func (s *Store) nowISO() string {
 // 「now - リース期間」の ISO8601 UTC（末尾 Z）文字列で、updated_at と同形式のため
 // 辞書順比較で時系列比較できる。
 //
-// 条件不一致（processing リースが有効、または既に completed/failed）の場合は
-// ErrAlreadyProcessing を返す。これにより、一時障害で processing のまま取り残された
-// ジョブが後続の再配信でリース失効後に再取得され、completed/failed へ到達できる。
+// 条件不成立時は ReturnValuesOnConditionCheckFailure=ALL_OLD で返る旧アイテムを見て
+// 分岐する。旧アイテムが空ならレコード未挿入とみなし ErrRecordNotFound（一時障害扱い）、
+// 存在すれば processing リース有効または完了済みとみなし ErrAlreadyProcessing（スキップ）。
+// これにより、一時障害で processing のまま取り残されたジョブが後続の再配信でリース失効後に
+// 再取得されて completed/failed へ到達でき、かつ未挿入ジョブのサイレント削除も防ぐ。
 func (s *Store) MarkProcessing(ctx context.Context, jobID, cutoff string) error {
 	_, err := s.api.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName:        aws.String(s.tableName),
@@ -85,10 +94,16 @@ func (s *Store) MarkProcessing(ctx context.Context, jobID, cutoff string) error 
 			":cutoff":     &ddbtypes.AttributeValueMemberS{Value: cutoff},
 			":now":        &ddbtypes.AttributeValueMemberS{Value: s.nowISO()},
 		},
+		ReturnValuesOnConditionCheckFailure: ddbtypes.ReturnValuesOnConditionCheckFailureAllOld,
 	})
 	if err != nil {
 		var condErr *ddbtypes.ConditionalCheckFailedException
 		if errors.As(err, &condErr) {
+			if len(condErr.Item) == 0 {
+				// 旧アイテムが空 = レコード未挿入。恒久スキップせず再配信させる。
+				return ErrRecordNotFound
+			}
+			// 旧アイテムが存在 = processing リース有効 または completed/failed。
 			return ErrAlreadyProcessing
 		}
 		return fmt.Errorf("processing への条件付き更新に失敗: %w", err)

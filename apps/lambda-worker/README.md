@@ -35,6 +35,8 @@ SQS をトリガーに起動し、GitHub リポジトリを取得・解析して
 ## 信頼性メモ
 
 - **processing リース**: `MarkProcessing` は「status=queued、または status=processing かつ updated_at がリース失効（stale）」の条件付き更新で processing を獲得する。これにより、MarkProcessing 成功後に一時障害で再配信されたジョブがリース失効後に再取得され、completed/failed へ確実に遷移する（processing のまま放置＝結果喪失を防止）。同時二重配信は条件付き書込で片方のみ成功し、他方はスキップされる。
+- **未挿入と処理中の区別**: 条件不成立時は `ReturnValuesOnConditionCheckFailure=ALL_OLD` で旧アイテムを取得し、レコード未挿入（旧値が空）は `ErrRecordNotFound`＝一時障害として再配信し（生産者順序の逆転等に備え、恒久欠落は DLQ で可視化）、既存（リース有効/完了済み）は `ErrAlreadyProcessing`＝冪等スキップとする。両者を混同してサイレント削除しない。
+- **GitHub エラーの恒久/一時分類**: `ghclient` は HTTP ステータスを保持する `HTTPError` を返し、4xx（不在/非公開/認証不可）は恒久エラー＝`status=failed` を記録して再配信しない、5xx・ネットワーク・タイムアウトは一時障害＝再配信する。無駄な再試行とレート消費、長時間「処理中」表示を防ぐ。
 - **tarball ダウンロードのタイムアウト**: 取得〜`Untar` の期限は `ctx`（Lambda デッドライン）で制御する。ダウンロード用 HTTP クライアントには `Client.Timeout` を設定しない（本文読了までのハード期限が展開全体に及び、正当な大リポジトリを偽陰性で failed 化するのを避けるため）。コミットログ取得側は 60 秒のタイムアウトを維持。
 
 ## 開発

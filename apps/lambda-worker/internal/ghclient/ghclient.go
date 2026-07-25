@@ -28,6 +28,39 @@ const (
 // ErrInvalidRepoURL は repo_url が期待形式でない場合に返る。
 var ErrInvalidRepoURL = errors.New("repo_url は https://github.com/{owner}/{repo} 形式である必要があります")
 
+// HTTPError は GitHub API がエラーステータスを返した場合のエラー。
+//
+// ステータスコードを保持し、恒久（4xx: 存在しない/非公開/認証不可など、再試行で
+// 解決しない）と一時（5xx など、再試行で解決し得る）を分類できるようにする。
+type HTTPError struct {
+	// Op は失敗した操作名（"tarball" / "commits"）。
+	Op string
+	// StatusCode は受信した HTTP ステータスコード。
+	StatusCode int
+}
+
+// Error はエラーメッセージを返す。
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("GitHub %s 取得が異常応答: status=%d", e.Op, e.StatusCode)
+}
+
+// Permanent は 4xx（再試行しても解決しないクライアントエラー）かどうかを返す。
+func (e *HTTPError) Permanent() bool {
+	return e.StatusCode >= 400 && e.StatusCode < 500
+}
+
+// IsPermanent は err が恒久的な HTTPError（4xx）かどうかを返す。
+//
+// 4xx でない HTTPError（5xx 等）やネットワーク/タイムアウト等の非 HTTPError は
+// 一時障害とみなし false を返す。
+func IsPermanent(err error) bool {
+	var he *HTTPError
+	if errors.As(err, &he) {
+		return he.Permanent()
+	}
+	return false
+}
+
 // Client は GitHub の tarball / REST API へアクセスする HTTP クライアント。
 type Client struct {
 	// httpClient は REST API（コミットログ等）用。応答が小さいためハード
@@ -98,7 +131,7 @@ func (c *Client) FetchTarball(ctx context.Context, owner, repo string) (io.ReadC
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, fmt.Errorf("tarball 取得が異常応答: status=%d", resp.StatusCode)
+		return nil, &HTTPError{Op: "tarball", StatusCode: resp.StatusCode}
 	}
 	return resp.Body, nil
 }
@@ -129,7 +162,7 @@ func (c *Client) FetchCommits(ctx context.Context, owner, repo string, limit int
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("commits 取得が異常応答: status=%d", resp.StatusCode)
+		return nil, &HTTPError{Op: "commits", StatusCode: resp.StatusCode}
 	}
 	return decodeCommits(resp.Body)
 }

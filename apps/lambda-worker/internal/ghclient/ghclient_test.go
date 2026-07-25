@@ -121,7 +121,40 @@ func TestFetchTarball_ErrorStatus(t *testing.T) {
 	c := New("")
 	c.codeloadBase = srv.URL
 
-	if _, err := c.FetchTarball(context.Background(), "o", "r"); err == nil {
+	_, err := c.FetchTarball(context.Background(), "o", "r")
+	if err == nil {
 		t.Fatal("404 応答はエラーになるべき")
+	}
+	var he *HTTPError
+	if !errors.As(err, &he) || he.StatusCode != http.StatusNotFound {
+		t.Fatalf("HTTPError(404) を期待したが: %v", err)
+	}
+	if !IsPermanent(err) {
+		t.Error("404 は恒久エラーであるべき")
+	}
+}
+
+func TestHTTPError_Classification(t *testing.T) {
+	cases := []struct {
+		status    int
+		permanent bool
+	}{
+		{http.StatusBadRequest, true},   // 400
+		{http.StatusUnauthorized, true}, // 401
+		{http.StatusForbidden, true},    // 403
+		{http.StatusNotFound, true},     // 404
+		{http.StatusGone, true},         // 410
+		{http.StatusInternalServerError, false},
+		{http.StatusServiceUnavailable, false},
+	}
+	for _, c := range cases {
+		err := &HTTPError{Op: "tarball", StatusCode: c.status}
+		if got := IsPermanent(err); got != c.permanent {
+			t.Errorf("status=%d IsPermanent=%v, want %v", c.status, got, c.permanent)
+		}
+	}
+	// 非 HTTPError（ネットワーク等）は恒久ではない（一時障害扱い）。
+	if IsPermanent(errors.New("network")) {
+		t.Error("非 HTTPError は恒久であってはならない")
 	}
 }

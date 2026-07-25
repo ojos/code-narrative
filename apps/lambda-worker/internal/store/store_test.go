@@ -52,7 +52,13 @@ func (f *leaseEvalDynamo) UpdateItem(_ context.Context, in *dynamodb.UpdateItemI
 	acquirable := f.status == statusQueued ||
 		(f.status == statusProcessing && f.updatedAt < cutoff)
 	if !acquirable {
-		return nil, &ddbtypes.ConditionalCheckFailedException{}
+		// 既存レコードなので ALL_OLD 相当の旧アイテムを付与して返す。
+		return nil, &ddbtypes.ConditionalCheckFailedException{
+			Item: map[string]ddbtypes.AttributeValue{
+				"status":     &ddbtypes.AttributeValueMemberS{Value: f.status},
+				"updated_at": &ddbtypes.AttributeValueMemberS{Value: f.updatedAt},
+			},
+		}
 	}
 	f.status = statusProcessing
 	f.updatedAt = now
@@ -104,18 +110,38 @@ func TestMarkProcessing_AcquiresLease(t *testing.T) {
 	if got := sVal(t, in.ExpressionAttributeValues[":now"]); got != "2026-07-25T00:00:00Z" {
 		t.Errorf(":now = %q", got)
 	}
+	// 条件不成立時に旧アイテムを得るため ALL_OLD を指定していること。
+	if in.ReturnValuesOnConditionCheckFailure != ddbtypes.ReturnValuesOnConditionCheckFailureAllOld {
+		t.Errorf("ReturnValuesOnConditionCheckFailure = %q", in.ReturnValuesOnConditionCheckFailure)
+	}
 }
 
-// TestMarkProcessing_FreshLeaseSkips は processing リースが有効（fresh）または
-// 既に completed/failed のとき、DynamoDB が条件不成立を返し ErrAlreadyProcessing に
-// 変換されること（従来の冪等スキップ）を検証する。
+// TestMarkProcessing_FreshLeaseSkips は、レコードが存在し processing リース有効または
+// completed/failed のとき（条件不成立＋旧アイテムあり）、ErrAlreadyProcessing へ変換
+// されること（冪等スキップ）を検証する。
 func TestMarkProcessing_FreshLeaseSkips(t *testing.T) {
-	fake := &fakeDynamo{err: &ddbtypes.ConditionalCheckFailedException{}}
+	fake := &fakeDynamo{err: &ddbtypes.ConditionalCheckFailedException{
+		Item: map[string]ddbtypes.AttributeValue{
+			"status": &ddbtypes.AttributeValueMemberS{Value: statusCompleted},
+		},
+	}}
 	s := newStore(fake)
 
 	err := s.MarkProcessing(context.Background(), "job-1", testCutoff)
 	if !errors.Is(err, ErrAlreadyProcessing) {
 		t.Fatalf("ErrAlreadyProcessing を期待したが: %v", err)
+	}
+}
+
+// TestMarkProcessing_RecordNotFound は、条件不成立かつ旧アイテムが空（＝レコード未挿入）
+// のとき、ErrRecordNotFound へ変換されること（サイレント削除させず再配信）を検証する。
+func TestMarkProcessing_RecordNotFound(t *testing.T) {
+	fake := &fakeDynamo{err: &ddbtypes.ConditionalCheckFailedException{}} // Item なし
+	s := newStore(fake)
+
+	err := s.MarkProcessing(context.Background(), "job-1", testCutoff)
+	if !errors.Is(err, ErrRecordNotFound) {
+		t.Fatalf("ErrRecordNotFound を期待したが: %v", err)
 	}
 }
 

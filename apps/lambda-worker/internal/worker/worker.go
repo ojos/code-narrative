@@ -141,8 +141,14 @@ func (w *Worker) Process(ctx context.Context, msg model.JobMessage) error {
 	cutoff := w.now().UTC().Add(-w.cfg.ProcessingLease).Format(time.RFC3339)
 	if err := w.store.MarkProcessing(ctx, msg.JobID, cutoff); err != nil {
 		if errors.Is(err, store.ErrAlreadyProcessing) {
+			// レコードは存在するが獲得不可（リース有効/完了済み）。冪等にスキップ。
 			log.Info("処理中（リース有効）または処理済みのためスキップ")
 			return nil
+		}
+		if errors.Is(err, store.ErrRecordNotFound) {
+			// レコード未挿入（生産者順序逆転等）。サイレント削除せず再配信で可視化。
+			log.Error("ジョブレコードが未挿入のため再配信", "error", err.Error())
+			return err
 		}
 		log.Error("processing 遷移に失敗（再配信）", "error", err.Error())
 		return err
@@ -159,9 +165,12 @@ func (w *Worker) Process(ctx context.Context, msg model.JobMessage) error {
 		return w.fail(ctx, log, msg.JobID, "model_id が不正", err)
 	}
 
-	// 4. tarball 取得（一時障害 → 再配信）。
+	// 4. tarball 取得。恒久エラー(4xx: 不在/非公開等) → failed 確定、それ以外 → 再配信。
 	tarball, err := w.fetcher.FetchTarball(ctx, owner, repo)
 	if err != nil {
+		if ghclient.IsPermanent(err) {
+			return w.fail(ctx, log, msg.JobID, "リポジトリ取得に失敗（存在しない/非公開の可能性）", err)
+		}
 		log.Error("tarball 取得に失敗（再配信）", "error", err.Error())
 		return err
 	}

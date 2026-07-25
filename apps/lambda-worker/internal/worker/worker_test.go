@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 
 	"github.com/ojos/code-narrative/apps/lambda-worker/internal/extract"
+	"github.com/ojos/code-narrative/apps/lambda-worker/internal/ghclient"
 	"github.com/ojos/code-narrative/apps/lambda-worker/internal/model"
 	"github.com/ojos/code-narrative/apps/lambda-worker/internal/store"
 )
@@ -151,6 +152,25 @@ func TestProcess_IdempotentSkip(t *testing.T) {
 	}
 }
 
+// TestProcess_RecordNotFoundRedelivers は、レコード未挿入（ErrRecordNotFound）が
+// サイレント削除されず、一時障害として再配信（非 nil）されることを検証する。
+func TestProcess_RecordNotFoundRedelivers(t *testing.T) {
+	st := &mockStore{processingErr: store.ErrRecordNotFound}
+	gen := &mockGenerator{}
+	w := newWorker(st, &mockFetcher{}, &mockExtractor{}, gen)
+
+	err := w.Process(context.Background(), validMsg())
+	if err == nil {
+		t.Fatal("レコード未挿入は再配信のため非 nil を返すべき")
+	}
+	if gen.called {
+		t.Error("未挿入ジョブで生成が呼ばれてはならない")
+	}
+	if st.completed != nil || st.failedCnt != 0 {
+		t.Error("未挿入ジョブで completed/failed を書いてはならない")
+	}
+}
+
 func TestProcess_OversizeMarksFailed(t *testing.T) {
 	st := &mockStore{}
 	gen := &mockGenerator{}
@@ -213,6 +233,42 @@ func TestProcess_TransientFetchErrorRetries(t *testing.T) {
 	}
 	if st.failedCnt != 0 {
 		t.Error("一時障害では failed を記録しない")
+	}
+}
+
+// TestProcess_Tarball404MarksFailed は、恒久エラー(404: 不在/非公開)が業務エラーとして
+// status=failed に記録され、再配信されない（nil 返し）ことを検証する。
+func TestProcess_Tarball404MarksFailed(t *testing.T) {
+	st := &mockStore{}
+	fetcher := &mockFetcher{tarballErr: &ghclient.HTTPError{Op: "tarball", StatusCode: 404}}
+	gen := &mockGenerator{}
+	w := newWorker(st, fetcher, &mockExtractor{}, gen)
+
+	err := w.Process(context.Background(), validMsg())
+	if err != nil {
+		t.Fatalf("恒久エラーは再配信せず nil を返すべき: %v", err)
+	}
+	if st.failedCnt != 1 {
+		t.Fatal("MarkFailed が呼ばれていない")
+	}
+	if gen.called {
+		t.Error("取得失敗で生成が呼ばれてはならない")
+	}
+}
+
+// TestProcess_Tarball5xxRetries は、5xx（一時障害）が再配信され failed を記録しない
+// ことを検証する。
+func TestProcess_Tarball5xxRetries(t *testing.T) {
+	st := &mockStore{}
+	fetcher := &mockFetcher{tarballErr: &ghclient.HTTPError{Op: "tarball", StatusCode: 503}}
+	w := newWorker(st, fetcher, &mockExtractor{}, &mockGenerator{})
+
+	err := w.Process(context.Background(), validMsg())
+	if err == nil {
+		t.Fatal("5xx は再配信のため非 nil を返すべき")
+	}
+	if st.failedCnt != 0 {
+		t.Error("5xx 一時障害では failed を記録しない")
 	}
 }
 
