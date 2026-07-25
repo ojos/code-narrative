@@ -1,0 +1,27 @@
+[project]
+name = "code-narrative-api"
+version = "0.1.0"
+description = "リポジトリ変換リクエストを受領する REST API (FastAPI + Mangum / Lambda)"
+requires-python = "==3.12.*"
+dependencies = [
+    "fastapi==0.115.6",
+    "mangum==0.19.0",
+    "pydantic==2.10.4",
+    "boto3==1.35.90",
+]
+
+# アプリケーション（配布パッケージではない）。プロジェクト自身のビルド/インストールを行わない。
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest==8.3.4",
+    "httpx==0.28.1",
+    "moto[dynamodb,sqs]==5.0.25",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
