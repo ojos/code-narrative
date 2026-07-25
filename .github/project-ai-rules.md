@@ -50,8 +50,17 @@
 
 共通規範「レビューワークフロー」のクロスモデル二段ゲートを、このプロジェクトで具体化します。
 
-1. 主レビュー: （実装したモデル自身によるレビュー手段を記載）
-2. 第二意見: （別ベンダーのモデルによるレビュー手段を記載）
+1. 主レビュー: 実装したモデル自身で、`scripts/verify.sh`（受け入れ検証）が緑になった後にステージ済み差分を自己レビューし、その場で修正する。
+2. 第二意見: 別ベンダー（Google Gemini）のモデルで独立にクロスチェックする。`bash scripts/gemini-review.sh`（ステージ済み差分）または `bash scripts/gemini-review.sh --range <git-range>`（例: `main..HEAD`）で実行する。`LGTM` のみ出力（終了コード 0）で通過、指摘ありは終了コード 1。
+   - 前提: `gemini` CLI（`scripts/install-ai-tools.sh --with-gemini`）と環境変数 `GEMINI_API_KEY`。
+3. 単一入口: `bash scripts/loop-gate.sh` が「受け入れ検証（`verify.sh`）→ 第二意見（`gemini-review.sh`）」を直列化する。push / PR 作成の前にこれを通す。第二意見コマンドは `LOOP_GATE_REVIEW_CMD` で差し替え・無効化できる。
 
 - 両段とも対象は致命バグ・脆弱性・型エラー・エッジケースの見落としに限ります。
 - 修正は 1 イテレーションで完結させます。
+
+### リモート最終ゲート（Copilot）
+
+- push / PR 作成後の GitHub 上の最終ゲートは GitHub Copilot のコードレビューを用います。
+- PR 作成時に**一度だけ**自動要求します。機構は `.github/workflows/copilot-review.yml`（`pull_request: [opened]` で `copilot-pull-request-reviewer[bot]` をレビュアー要求）。
+- 前提: リポジトリ所有者の Copilot サブスクリプションで Copilot code review が有効なこと。無効な場合はワークフローが失敗するため、有効化するか本ゲートを無効化します。既定トークンで要求できない場合は Secrets `COPILOT_REVIEW_TOKEN`（PAT）で切り替えます。
+- 最終ゲートは共通規範どおり 1 回のみ要求します（`.ai-playbook/review-workflow.md`）。
