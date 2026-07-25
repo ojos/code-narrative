@@ -74,11 +74,11 @@ def test_unsigned_token_is_rejected(
     assert response.status_code == 401
 
 
-def test_signed_alg_token_is_accepted(
+def test_signed_alg_token_is_accepted_when_fallback_enabled(
     client: TestClient,
     valid_payload: dict[str, str],
 ) -> None:
-    """alg が none 以外かつ署名部が非空なら sub を採用し 202 になる。
+    """フォールバック有効時、alg が none 以外かつ署名非空なら sub 採用で 202。
 
     （署名の暗号検証は本フォールバックのスコープ外。alg:none 拒否のみを担保）。
     """
@@ -91,3 +91,73 @@ def test_signed_alg_token_is_accepted(
     )
 
     assert response.status_code == 202
+
+
+def test_raw_bearer_rejected_by_default(
+    client_verified_only: TestClient,
+    valid_payload: dict[str, str],
+) -> None:
+    """既定（フォールバック無効）では生 Bearer は署名有無に関わらず 401。
+
+    ダミー署名付きトークンでも、API Gateway 検証済み claims が無い限り
+    未検証復号は行わず 401 とする（なりすまし防止）。
+    """
+
+    token = _token({"alg": "RS256", "typ": "JWT"}, {"sub": "attacker"}, "dummy")
+    response = client_verified_only.post(
+        "/api/v1/narratives",
+        json=valid_payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 401
+
+
+def _fake_request_with_claims(sub: str) -> Any:
+    """API Gateway 検証済み claims を持つ Starlette Request を構築する。
+
+    Args:
+        sub: claims に格納する ``sub``。
+
+    Returns:
+        ``aws.event`` 経由で claims を持つ Request。
+    """
+
+    from starlette.requests import Request
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/v1/narratives",
+        "headers": [],
+        "query_string": b"",
+        "aws.event": {
+            "requestContext": {
+                "authorizer": {"jwt": {"claims": {"sub": sub}}}
+            }
+        },
+    }
+    return Request(scope)
+
+
+def test_verified_claims_used_even_when_fallback_disabled() -> None:
+    """フォールバック無効でも API Gateway 検証済み claims の sub は採用される。"""
+
+    from app.auth import get_current_user_id
+    from app.config import Settings
+
+    settings = Settings(
+        table_name="CodeNarratives",
+        queue_url="https://sqs.local/000000000000/jobs",
+        aws_region="us-east-1",
+        gsi_name="user_id-created_at-index",
+        default_list_limit=20,
+        max_list_limit=100,
+        auth_allow_unverified_jwt=False,
+    )
+
+    resolved = get_current_user_id(
+        _fake_request_with_claims("verified-user"), settings
+    )
+
+    assert resolved == "verified-user"

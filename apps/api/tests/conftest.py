@@ -68,9 +68,75 @@ def aws_backend() -> Iterator[dict[str, Any]]:
         yield {"table": table, "sqs": sqs, "queue_url": queue_url}
 
 
+def _build_test_settings(
+    aws_backend: dict[str, Any], *, allow_unverified_jwt: bool
+) -> Any:
+    """テスト用の :class:`app.config.Settings` を構築する。
+
+    Args:
+        aws_backend: moto で構築したリソース情報。
+        allow_unverified_jwt: 未検証 Bearer フォールバックを許可するか。
+
+    Returns:
+        構築済み Settings。
+    """
+
+    from app.config import Settings
+
+    return Settings(
+        table_name=_TABLE_NAME,
+        queue_url=aws_backend["queue_url"],
+        aws_region=_REGION,
+        gsi_name=_GSI_NAME,
+        default_list_limit=20,
+        max_list_limit=100,
+        auth_allow_unverified_jwt=allow_unverified_jwt,
+    )
+
+
+def _build_client(
+    aws_backend: dict[str, Any], *, allow_unverified_jwt: bool
+) -> Iterator[TestClient]:
+    """依存性を moto バックエンドへ差し替えた TestClient を構築する内部ヘルパ。
+
+    Args:
+        aws_backend: moto で構築した DynamoDB/SQS リソース。
+        allow_unverified_jwt: 未検証 Bearer フォールバックを許可するか。
+
+    Yields:
+        設定済みの :class:`TestClient`。
+    """
+
+    from app.dependencies import get_queue_service, get_repository
+    from app.config import get_settings
+    from app.main import create_app
+    from app.repositories.narrative_repository import NarrativeRepository
+    from app.services.queue_service import QueueService
+
+    app = create_app()
+    repository = NarrativeRepository(aws_backend["table"], _GSI_NAME)
+    queue = QueueService(aws_backend["sqs"], aws_backend["queue_url"])
+    settings = _build_test_settings(
+        aws_backend, allow_unverified_jwt=allow_unverified_jwt
+    )
+
+    app.dependency_overrides[get_repository] = lambda: repository
+    app.dependency_overrides[get_queue_service] = lambda: queue
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    with TestClient(app) as test_client:
+        yield test_client
+
+    app.dependency_overrides.clear()
+
+
 @pytest.fixture
 def client(aws_backend: dict[str, Any]) -> Iterator[TestClient]:
-    """依存性を moto バックエンドへ差し替えた TestClient を提供する。
+    """未検証 Bearer フォールバックを有効化した TestClient を提供する。
+
+    大半のテストは API Gateway イベントを持たないため、Authorization ヘッダ
+    復号のフォールバック経路（``AUTH_ALLOW_UNVERIFIED_JWT=true`` 相当）で
+    認証する。
 
     Args:
         aws_backend: moto で構築した DynamoDB/SQS リソース。
@@ -79,22 +145,24 @@ def client(aws_backend: dict[str, Any]) -> Iterator[TestClient]:
         設定済みの :class:`TestClient`。
     """
 
-    from app.dependencies import get_queue_service, get_repository
-    from app.main import create_app
-    from app.repositories.narrative_repository import NarrativeRepository
-    from app.services.queue_service import QueueService
+    yield from _build_client(aws_backend, allow_unverified_jwt=True)
 
-    app = create_app()
-    repository = NarrativeRepository(aws_backend["table"], _GSI_NAME)
-    queue = QueueService(aws_backend["sqs"], aws_backend["queue_url"])
 
-    app.dependency_overrides[get_repository] = lambda: repository
-    app.dependency_overrides[get_queue_service] = lambda: queue
+@pytest.fixture
+def client_verified_only(aws_backend: dict[str, Any]) -> Iterator[TestClient]:
+    """未検証フォールバックを無効化した（本番既定相当の）TestClient を提供する。
 
-    with TestClient(app) as test_client:
-        yield test_client
+    ``AUTH_ALLOW_UNVERIFIED_JWT=false`` 相当。API Gateway 検証済み claims が
+    無い限り認証は失敗する。
 
-    app.dependency_overrides.clear()
+    Args:
+        aws_backend: moto で構築した DynamoDB/SQS リソース。
+
+    Yields:
+        設定済みの :class:`TestClient`。
+    """
+
+    yield from _build_client(aws_backend, allow_unverified_jwt=False)
 
 
 @pytest.fixture

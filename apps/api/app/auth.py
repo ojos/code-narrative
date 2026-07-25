@@ -1,9 +1,15 @@
 """認証ユーザー（JWT の ``sub``）を解決する依存関係を提供するモジュール。
 
-API Gateway (HTTP API) の JWT Authorizer が検証済みトークンの claims を
-Lambda イベントの ``requestContext.authorizer.jwt.claims`` に格納する前提。
-その値を優先的に用い、無い場合は多層防御として ``Authorization: Bearer``
-ヘッダのペイロードを（署名検証済み前提で）復号して ``sub`` を取得する。
+本番の正規経路では、API Gateway (HTTP API) の JWT Authorizer が署名検証済み
+トークンの claims を Lambda イベントの
+``requestContext.authorizer.jwt.claims`` に格納する。この検証済み ``sub`` が
+あれば常にそれを用いる。
+
+検証済み claims が無い場合の生 ``Authorization: Bearer`` の復号（署名の真正性を
+検証しないフォールバック）は、既定では無効であり 401 とする。環境変数
+``AUTH_ALLOW_UNVERIFIED_JWT=true`` を設定したローカル/テスト環境でのみ有効化
+される。署名の暗号検証（JWKS）は本モジュールのスコープ外であり、本番では
+このフォールバックに依存しない。
 """
 
 from __future__ import annotations
@@ -13,8 +19,9 @@ import binascii
 import json
 from typing import Any
 
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 
+from .config import Settings, get_settings
 from .logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -97,11 +104,27 @@ def _decode_unverified_sub(token: str) -> str | None:
     return sub if isinstance(sub, str) and sub else None
 
 
-def get_current_user_id(request: Request) -> str:
+def get_current_user_id(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> str:
     """認証済みユーザーの ``sub``（=``user_id``）を解決する FastAPI 依存関係。
+
+    優先順位:
+
+    1. API Gateway JWT Authorizer が格納した検証済み claims の ``sub``
+       （本番の正規経路。常にこれを用いる）。
+    2. 上記が無く、かつ ``AUTH_ALLOW_UNVERIFIED_JWT=true`` の場合のみ、
+       生 Bearer トークンの未検証復号による ``sub``（ローカル/テスト用途）。
+
+    既定（``AUTH_ALLOW_UNVERIFIED_JWT`` 未設定/false）では未検証フォールバックを
+    行わず、検証済み claims が無ければ 401 とする。これは、API Gateway を経由せず
+    Lambda に到達した場合（Function URL 露出・直接 Invoke 等）に、ダミー署名付き
+    トークンで任意の ``sub`` へなりすまされることを防ぐため。
 
     Args:
         request: FastAPI のリクエストオブジェクト。
+        settings: 実行時設定。
 
     Returns:
         認証ユーザーの ``sub``。
@@ -114,12 +137,13 @@ def get_current_user_id(request: Request) -> str:
     if sub:
         return sub
 
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[len("Bearer ") :].strip()
-        sub = _decode_unverified_sub(token)
-        if sub:
-            return sub
+    if settings.auth_allow_unverified_jwt:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[len("Bearer ") :].strip()
+            sub = _decode_unverified_sub(token)
+            if sub:
+                return sub
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

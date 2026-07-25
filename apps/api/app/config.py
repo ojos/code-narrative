@@ -24,6 +24,8 @@ class Settings:
         gsi_name: ユーザー別一覧に用いる GSI 名。
         default_list_limit: 一覧取得の既定ページサイズ。
         max_list_limit: 一覧取得で許可する最大ページサイズ。
+        auth_allow_unverified_jwt: 署名未検証の Bearer フォールバックを許可するか。
+            本番では常に false（既定）。ローカル/テスト用途でのみ true にする。
     """
 
     table_name: str
@@ -32,6 +34,25 @@ class Settings:
     gsi_name: str
     default_list_limit: int
     max_list_limit: int
+    auth_allow_unverified_jwt: bool
+
+
+def _parse_bool(value: str | None) -> bool:
+    """環境変数の文字列を真偽値へ明示的に解釈する。
+
+    ``"1"`` / ``"true"`` / ``"yes"``（大小・前後空白無視）のみ true とし、
+    未設定・空・その他の値はすべて false とする（安全側の既定）。
+
+    Args:
+        value: 環境変数の値（未設定なら ``None``）。
+
+    Returns:
+        解釈した真偽値。
+    """
+
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes"}
 
 
 def _require_env(name: str) -> str:
@@ -68,4 +89,7 @@ def get_settings() -> Settings:
         gsi_name=os.environ.get("DYNAMODB_GSI_NAME", DEFAULT_GSI_NAME),
         default_list_limit=int(os.environ.get("DEFAULT_LIST_LIMIT", "20")),
         max_list_limit=int(os.environ.get("MAX_LIST_LIMIT", "100")),
+        auth_allow_unverified_jwt=_parse_bool(
+            os.environ.get("AUTH_ALLOW_UNVERIFIED_JWT")
+        ),
     )
