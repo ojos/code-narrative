@@ -11,7 +11,11 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
 }
 
 locals {
-  repo_sub_prefix = "repo:${var.github_owner}/${var.github_repo}"
+  # GitHub の OIDC subject claim は immutable ID 形式
+  # (repo:<owner>@<ownerID>/<repo>@<repoID>:...) へ移行済み。実トークンは immutable を提示するが、
+  # 移行期の堅牢性のためレガシー形式と immutable 形式の双方を信頼する(values は OR)。
+  repo_sub_legacy    = "repo:${var.github_owner}/${var.github_repo}"
+  repo_sub_immutable = "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}"
 }
 
 # --- state バケットへのアクセスポリシー(plan/apply 共通) ---
@@ -58,7 +62,10 @@ data "aws_iam_policy_document" "plan_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["${local.repo_sub_prefix}:pull_request"]
+      values = [
+        "${local.repo_sub_legacy}:pull_request",
+        "${local.repo_sub_immutable}:pull_request",
+      ]
     }
   }
 }
@@ -100,7 +107,10 @@ data "aws_iam_policy_document" "apply_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["${local.repo_sub_prefix}:ref:refs/heads/main"]
+      values = [
+        "${local.repo_sub_legacy}:ref:refs/heads/main",
+        "${local.repo_sub_immutable}:ref:refs/heads/main",
+      ]
     }
   }
 }
