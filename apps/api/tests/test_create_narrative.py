@@ -83,6 +83,40 @@ def test_create_rejects_unknown_model_id_with_400(
     assert response.status_code == 400
 
 
+def test_create_accepts_jp_whitelisted_model_id(
+    client: TestClient,
+    auth_headers: Callable[[str], dict[str, str]],
+    valid_payload: dict[str, str],
+) -> None:
+    """settings.allowed_model_ids（東京 jp. モデル）は 202 で受理される。"""
+
+    payload = dict(valid_payload)
+    payload["model_id"] = "jp.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+    response = client.post(
+        "/api/v1/narratives", json=payload, headers=auth_headers("user-1")
+    )
+
+    assert response.status_code == 202
+
+
+def test_create_rejects_legacy_us_model_id_with_400(
+    client: TestClient,
+    auth_headers: Callable[[str], dict[str, str]],
+    valid_payload: dict[str, str],
+) -> None:
+    """旧 us. リージョンのモデル ID は許可集合外のため 400 を返す。"""
+
+    payload = dict(valid_payload)
+    payload["model_id"] = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+    response = client.post(
+        "/api/v1/narratives", json=payload, headers=auth_headers("user-1")
+    )
+
+    assert response.status_code == 400
+
+
 def test_create_requires_authentication(
     client: TestClient,
     valid_payload: dict[str, str],

@@ -145,6 +145,7 @@ def test_verified_claims_used_even_when_fallback_disabled() -> None:
 
     from app.auth import get_current_user_id
     from app.config import Settings
+    from app.constants import ALLOWED_MODEL_IDS
 
     settings = Settings(
         table_name="CodeNarratives",
@@ -153,6 +154,7 @@ def test_verified_claims_used_even_when_fallback_disabled() -> None:
         gsi_name="user_id-created_at-index",
         default_list_limit=20,
         max_list_limit=100,
+        allowed_model_ids=ALLOWED_MODEL_IDS,
         auth_allow_unverified_jwt=False,
     )
 
