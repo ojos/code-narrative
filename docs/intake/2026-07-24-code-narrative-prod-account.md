@@ -105,10 +105,23 @@ priority: high
 | 順 | タスク | 状態 | 備考 |
 |---|---|---|---|
 | **T0** | **開発リポジトリの整備** | **完了**（2026-07-24） | `ojos/code-narrative`（public）。詳細は下記「T0 詳細」 |
-| T1 | 子アカウント作成・OU 配置・Identity Center 割当 | 未着手 | Control Tower Account Factory で発行。`scope.in` 冒頭群 |
-| T2 | Budgets / Cost Anomaly Detection | Terraform 記述済 | `terraform/bootstrap/cost.tf`。apply 待ち（月3,000円） |
+| **T0.5** | **OU の Control Tower 登録（整備）** | **完了**（2026-07-25） | Workloads / Prod のベースラインが有効化済み |
+| T1 | 子アカウント作成・OU 配置・Identity Center 割当 | **アカウント発行完了**（2026-07-25） | `code-narrative-prod`（`016647419566`）が Prod OU 配下でエンロール済（統制有効・CTベースライン有効）。残: ido のログイン確認と直接割当の是正 |
+| T2 | Budgets / Cost Anomaly Detection | Terraform 記述済 | `terraform/bootstrap/cost.tf`。当該アカウントは USD 請求のため月20USD(≒3,000円)に修正済 |
 | T3 | Route 53 サブドメイン委任 | Terraform 記述済 | `terraform/environments/prod/dns.tf`。親ゾーン側 NS 登録は P2 依存 |
 | T4 | Terraform state バケット + OIDC 2ロール | Terraform 記述済 | `terraform/bootstrap/`。子アカウント作成後に手適用 |
+
+### T0.5 詳細: OU の Control Tower 登録（整備）
+
+- **背景**: `Sandbox` / `Suspended` / `Workloads` / `Dev` / `Prod` / `Infrastructure` の各 OU は AWS Organizations 上には存在するが、**Control Tower のベースラインが未登録（「有効になっていません」）**。登録済みは Security OU（CT コア）と管理アカウントのみ。
+- **影響**: Account Factory は**ベースライン有効な OU にしかアカウントを作れない**ため、Prod がドロップダウンに出ず T1 が着手できない。
+- **作業（Control Tower → 組織）**:
+  - `Prod` を選択 → アクション → **OU を登録**（ベースライン有効化）。空 OU のため数分。親 Workloads の登録を求められたら Workloads → Prod の順で登録。
+  - 将来使う `Dev` も必要に応じて同様に登録（今回は Prod のみで可）。
+  - `Sandbox` / `Suspended` / `Infrastructure` は当面未登録のままでよい。
+- **完了条件**:
+  - Prod の「AWS Control Tower のベースラインステータス」が**有効**になる。
+  - Account Factory の OU 選択に Prod が表示される。
 
 Terraform 方針: T1（アカウント発行）は Control Tower Account Factory の一度きりの操作のため手作業とし、T2〜T4 および以降のアプリ基盤（SPEC Phase 2）はすべて Terraform で管理する。適用順序は `terraform/README.md` を参照。
 
@@ -138,6 +151,13 @@ Terraform 方針: T1（アカウント発行）は Control Tower Account Factory
 | P2 | `ojos.jp` の権威 DNS の管理場所と NS レコード追加権限 | 未確認（T3 の前提） |
 | P3 | GitHub リポジトリ名とデプロイ対象ブランチ | **解決**（`ojos/code-narrative` / main=apply, PR=plan） |
 | P4 | 管理アカウントのルートユーザーの MFA・復旧経路 | 未確認 |
+
+## 別課題（作業中に発見・本 intake とは独立）
+
+| # | 内容 | 状態 |
+|---|---|---|
+| X1 | **SCIM 自動プロビジョニングが全ユーザーで 401（コード 45003）** | 未対応。Google→Identity Center の SCIM アクセストークンが失効。名前等の属性同期・退職者の自動失効が停止中（セキュリティリスク）。**対処: IAM Identity Center 設定→自動プロビジョニングでトークン再発行→Google 側に差し替え**。SAML ログインとは別系統でログインには影響しない。 |
+| X2 | Identity Center のグループにユーザーを追加できない（GWS＋SCIM 制約） | 当面は ido へ**直接割り当て**で運用。将来グループ運用が必要なら ssosync 導入を別 intake 化。 |
 
 ## 論点の対応状況（docs/SPEC.md との突き合わせで検出）
 

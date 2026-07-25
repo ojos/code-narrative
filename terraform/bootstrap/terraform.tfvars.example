@@ -8,8 +8,8 @@ github_repo  = "code-narrative"
 # 空にするとアカウントIDを付与して自動命名される
 tfstate_bucket_name = ""
 
-# アカウントの請求通貨に合わせること(JPY 請求でなければ USD 建てで見直す)
-budget_limit_amount = "3000"
-budget_currency     = "JPY"
+# 当該アカウントは USD 請求(AWS Budgets は USD のみ)。約20USD≒3,000円
+budget_limit_amount = "20"
+budget_currency     = "USD"
 
 notification_emails = ["aws+code-narrative@ojos.jp"]
