@@ -107,9 +107,9 @@ priority: high
 | **T0** | **開発リポジトリの整備** | **完了**（2026-07-24） | `ojos/code-narrative`（public）。詳細は下記「T0 詳細」 |
 | **T0.5** | **OU の Control Tower 登録（整備）** | **完了**（2026-07-25） | Workloads / Prod のベースラインが有効化済み |
 | T1 | 子アカウント作成・OU 配置・Identity Center 割当 | **アカウント発行完了**（2026-07-25） | `code-narrative-prod`（`016647419566`）が Prod OU 配下でエンロール済（統制有効・CTベースライン有効）。残: ido のログイン確認と直接割当の是正 |
-| T2 | Budgets / Cost Anomaly Detection | Terraform 記述済 | `terraform/bootstrap/cost.tf`。当該アカウントは USD 請求のため月20USD(≒3,000円)に修正済 |
-| T3 | Route 53 サブドメイン委任 | Terraform 記述済 | `terraform/environments/prod/dns.tf`。親ゾーン側 NS 登録は P2 依存 |
-| T4 | Terraform state バケット + OIDC 2ロール | Terraform 記述済 | `terraform/bootstrap/`。子アカウント作成後に手適用 |
+| T2 | Budgets / Cost Anomaly Detection | **完了**（2026-07-25） | 月20USD(≒3,000円)。Cost Anomaly 有効。`terraform/bootstrap` apply 済 |
+| T3 | Route 53 サブドメイン委任 | 未着手 | `terraform/environments/prod/dns.tf`。親ゾーン側 NS 登録は P2 依存 |
+| T4 | Terraform state バケット + OIDC 2ロール | **完了**（2026-07-25） | `terraform/bootstrap` apply 済・state を S3(`code-narrative-tfstate-016647419566`)へ移行済。GitHub 変数3つ登録済 |
 
 ### T0.5 詳細: OU の Control Tower 登録（整備）
 
