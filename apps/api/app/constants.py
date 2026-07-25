@@ -30,6 +30,9 @@ ALLOWED_MODEL_IDS: frozenset[str] = frozenset(
     {
         "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
         "amazon.nova-lite-v1:0",
+        "deepseek.v3.2",
+        "qwen.qwen3-32b-v1:0",
+        "google.gemma-3-12b-it",
     }
 )
 

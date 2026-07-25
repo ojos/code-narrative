@@ -28,10 +28,44 @@ func (f *fakeConverse) Converse(_ context.Context, in *bedrockruntime.ConverseIn
 	return f.out, f.err
 }
 
+// TestAllowedModelsVendorsAreDistinct はホワイトリストの構成上の制約を固定する。
+//
+// 作風の振れ幅を確保するため、ベンダーを重複させず 5 社から 1 モデルずつ選定する
+// （SPEC §4⑤）。同一ベンダーの別モデルを足すと、この制約が崩れたことに気づかない
+// まま選択肢だけが増えるため、テストで検出する。
+func TestAllowedModelsVendorsAreDistinct(t *testing.T) {
+	const wantCount = 5
+	if len(AllowedModels) != wantCount {
+		t.Errorf("許可モデル数 = %d, want %d", len(AllowedModels), wantCount)
+	}
+
+	// 推論プロファイル ID のスコーププレフィックス。地理スコープ(us/eu/apac/jp)に
+	// 加えて global. も対象にする。global.anthropic.* と jp.anthropic.* を別ベンダーと
+	// 誤認すると、同一ベンダーの重複を見逃す。
+	scopePrefixes := map[string]struct{}{"us": {}, "eu": {}, "apac": {}, "jp": {}, "global": {}}
+	seen := make(map[string]string, wantCount)
+	for id := range AllowedModels {
+		parts := strings.Split(id, ".")
+		vendor := parts[0]
+		// スコーププレフィックス付きは 2 要素目がベンダー。
+		if _, ok := scopePrefixes[vendor]; ok && len(parts) > 1 {
+			vendor = parts[1]
+		}
+		if prev, dup := seen[vendor]; dup {
+			t.Errorf("ベンダー %q が重複: %q と %q", vendor, prev, id)
+			continue
+		}
+		seen[vendor] = id
+	}
+}
+
 func TestValidateModelID(t *testing.T) {
 	for _, id := range []string{
 		"jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
 		"amazon.nova-lite-v1:0",
+		"deepseek.v3.2",
+		"qwen.qwen3-32b-v1:0",
+		"google.gemma-3-12b-it",
 	} {
 		if err := ValidateModelID(id); err != nil {
 			t.Errorf("許可モデル %q が拒否された: %v", id, err)
