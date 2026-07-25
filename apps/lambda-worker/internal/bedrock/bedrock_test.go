@@ -29,18 +29,23 @@ func (f *fakeConverse) Converse(_ context.Context, in *bedrockruntime.ConverseIn
 
 func TestValidateModelID(t *testing.T) {
 	for _, id := range []string{
-		"us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+		"jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
 		"amazon.nova-lite-v1:0",
-		"us.meta.llama3-3-70b-instruct-v1:0",
 	} {
 		if err := ValidateModelID(id); err != nil {
 			t.Errorf("許可モデル %q が拒否された: %v", id, err)
 		}
 	}
 
-	err := ValidateModelID("evil.model:1")
-	if !errors.Is(err, ErrModelNotAllowed) {
-		t.Errorf("非許可モデルで ErrModelNotAllowed を期待したが: %v", err)
+	// 東京(ap-northeast-1)で無効な旧 ID(us. プロファイル / Llama)は拒否される。
+	for _, id := range []string{
+		"evil.model:1",
+		"us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+		"us.meta.llama3-3-70b-instruct-v1:0",
+	} {
+		if err := ValidateModelID(id); !errors.Is(err, ErrModelNotAllowed) {
+			t.Errorf("非許可モデル %q で ErrModelNotAllowed を期待したが: %v", id, err)
+		}
 	}
 }
 

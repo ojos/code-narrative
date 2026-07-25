@@ -9,22 +9,19 @@
  * Bedrock 呼び出しを許可するモデルのホワイトリスト。
  *
  * `id` は API へ送る `model_id`、`label` はドロップダウン表示名。
- * `us.` プレフィックスはクロスリージョン推論プロファイル ID（SPEC §4⑤）。
+ * デプロイ先 ap-northeast-1（東京）で提供されるモデルに限定する。Claude は
+ * 東京では `jp.` 地域推論プロファイル ID が必須（SPEC §4⑤）。
  *
  * @type {ReadonlyArray<{ id: string, label: string }>}
  */
 export const ALLOWED_MODELS = Object.freeze([
   Object.freeze({
-    id: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    id: "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
     label: "Claude Sonnet 4.5",
   }),
   Object.freeze({
     id: "amazon.nova-lite-v1:0",
     label: "Amazon Nova Lite",
-  }),
-  Object.freeze({
-    id: "us.meta.llama3-3-70b-instruct-v1:0",
-    label: "Meta Llama 3.3 70B Instruct",
   }),
 ]);
 

@@ -144,7 +144,7 @@ code-narrative/
         "job_id": "uuid-v4-string",
         "repo_url": "https://github.com/owner/repo",
         "status": "completed",
-        "model_id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "model_id": "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
         "generated_story": "string (生成されたショートショート)",
         "created_at": "2026-07-23T00:00:00Z",
         "updated_at": "2026-07-23T00:01:30Z"
@@ -255,10 +255,9 @@ code-narrative/
      - GitHub リポジトリ URL 入力欄（public リポジトリのみ）
      - カスタムプロンプト入力欄（「サイバーパンク風」「太宰治風」などのプリセットボタン付き）
      - **Bedrock モデル選択ドロップダウン**（許可モデルホワイトリスト）:
-       - `Claude Sonnet 4.5` (`us.anthropic.claude-sonnet-4-5-20250929-v1:0`)
        - `Amazon Nova Lite` (`amazon.nova-lite-v1:0`)
-       - `Meta Llama 3.3 70B Instruct` (`us.meta.llama3-3-70b-instruct-v1:0`)
-       - ※ Anthropic / Meta の近年モデルはクロスリージョン推論プロファイル ID（`us.` プレフィックス）での呼び出しが必須
+       - `Claude Sonnet 4.5` (`jp.anthropic.claude-sonnet-4-5-20250929-v1:0`)
+       - ※ デプロイ先 ap-northeast-1（東京）では Claude は `jp.` 地域推論プロファイル ID が必須（`us.` / `global.` は不可）。Llama 3.3 70B は東京で推論プロファイル提供がないため除外
        - ※ 実装時に利用リージョンでの各モデルの提供状況を確認すること
   3. **結果表示エリア**: ポーリングまたは結果取得 API により、生成されたショートショートを表示
   4. **履歴一覧**: ジョブ一覧 API により自分の変換履歴を表示
