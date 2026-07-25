@@ -11,11 +11,14 @@ variable "subdomain" {
 }
 
 variable "bedrock_model_ids" {
-  description = "許可モデルホワイトリスト(SPEC §4⑤)。地理スコープ付き ID(jp. 等)は推論プロファイル。デプロイ先 ap-northeast-1(東京)で提供されるモデルに限定"
+  description = "許可モデルホワイトリスト(SPEC §4⑤)。地理スコープ付き ID(jp. 等)は推論プロファイル。デプロイ先 ap-northeast-1(東京)で提供され、temperature 指定に対応するモデルをベンダー重複なしで選定"
   type        = list(string)
   default = [
     "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
     "amazon.nova-lite-v1:0",
+    "deepseek.v3.2",
+    "qwen.qwen3-32b-v1:0",
+    "google.gemma-3-12b-it",
   ]
 }
 

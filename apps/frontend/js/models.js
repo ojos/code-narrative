@@ -1,7 +1,7 @@
 /**
  * @file モデルホワイトリストとプロンプトプリセットの定義。
  *
- * SPEC §4⑤ の許可モデル 3 件を単一の正本として保持する。ブラウザ API に依存しない
+ * SPEC §4⑤ の許可モデル 5 件を単一の正本として保持する。ブラウザ API に依存しない
  * 純粋なデータ・関数のみを置き、UI とサーバー双方の期待値が食い違わないようにする。
  */
 
@@ -11,6 +11,9 @@
  * `id` は API へ送る `model_id`、`label` はドロップダウン表示名。
  * デプロイ先 ap-northeast-1（東京）で提供されるモデルに限定する。Claude は
  * 東京では `jp.` 地域推論プロファイル ID が必須（SPEC §4⑤）。
+ *
+ * 作風の振れ幅を確保するため、ベンダーを重複させず 5 社から 1 モデルずつ選び、
+ * いずれも temperature 指定に対応するモデルとする（SPEC §4⑤）。
  *
  * @type {ReadonlyArray<{ id: string, label: string }>}
  */
@@ -22,6 +25,18 @@ export const ALLOWED_MODELS = Object.freeze([
   Object.freeze({
     id: "amazon.nova-lite-v1:0",
     label: "Amazon Nova Lite",
+  }),
+  Object.freeze({
+    id: "deepseek.v3.2",
+    label: "DeepSeek V3.2",
+  }),
+  Object.freeze({
+    id: "qwen.qwen3-32b-v1:0",
+    label: "Qwen3 32B",
+  }),
+  Object.freeze({
+    id: "google.gemma-3-12b-it",
+    label: "Gemma 3 12B IT",
   }),
 ]);
 
