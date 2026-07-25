@@ -45,7 +45,9 @@ func New(api DynamoAPI, tableName string) *Store {
 // 集計結果レコード（job_id が "STATS#" で始まる）は集計対象から除外する。
 // これを含めると、日次実行のたびに前回の集計結果が母数へ混入していく。
 func (s *Store) ScanJobs(ctx context.Context) ([]stats.Job, error) {
-	var jobs []stats.Job
+	// 0 件でも非 nil の空スライスを返す。nil スライスは JSON で null になり、
+	// aggregate フェーズの「scan 欠落」検出（ErrInvalidPayload）と区別が付かなくなる。
+	jobs := make([]stats.Job, 0)
 	var startKey map[string]ddbtypes.AttributeValue
 
 	for {

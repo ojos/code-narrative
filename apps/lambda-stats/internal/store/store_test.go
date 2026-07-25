@@ -143,6 +143,23 @@ func TestScanJobs_ProjectsWithReservedWordAliases(t *testing.T) {
 	}
 }
 
+func TestScanJobs_ReturnsNonNilWhenEmpty(t *testing.T) {
+	// 0 件で nil を返すと JSON で null になり、aggregate 側の「scan 欠落」検出に
+	// 誤検知する（ジョブ 0 件の正常系が payload エラーとして落ちる）。
+	fake := &fakeDynamo{scanOuts: []*dynamodb.ScanOutput{{}}}
+
+	jobs, err := New(fake, "T").ScanJobs(context.Background())
+	if err != nil {
+		t.Fatalf("想定外エラー: %v", err)
+	}
+	if jobs == nil {
+		t.Error("0 件でも非 nil の空スライスを期待したが nil")
+	}
+	if len(jobs) != 0 {
+		t.Errorf("件数 = %d, want 0", len(jobs))
+	}
+}
+
 func TestScanJobs_Error(t *testing.T) {
 	sentinel := errors.New("scan 失敗")
 	fake := &fakeDynamo{scanErr: sentinel}

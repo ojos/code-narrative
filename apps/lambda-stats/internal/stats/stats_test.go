@@ -155,6 +155,52 @@ func TestHandle_Aggregate(t *testing.T) {
 	}
 }
 
+func TestHandle_AggregateWithoutScan(t *testing.T) {
+	h := New(&fakeScanner{}, &fakeWriter{}, fixedClock)
+
+	// scan 欠落を 0 件集計として通すと、ペイロード組み立てミスに気づかないまま
+	// 「全指標ゼロ」を書き込んでしまう。
+	_, err := h.Handle(context.Background(), Event{Phase: PhaseAggregate})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Errorf("ErrInvalidPayload を期待したが: %v", err)
+	}
+}
+
+func TestHandle_AggregateWithEmptyScan(t *testing.T) {
+	h := New(&fakeScanner{}, &fakeWriter{}, fixedClock)
+
+	// ジョブ 0 件は正常系。空配列（非 nil）は欠落と区別して受理する。
+	got, err := h.Handle(context.Background(), Event{Phase: PhaseAggregate, Scan: []Job{}})
+	if err != nil {
+		t.Fatalf("ジョブ 0 件は正常系だが失敗した: %v", err)
+	}
+	m, ok := got.(Metrics)
+	if !ok {
+		t.Fatalf("戻り値の型 = %T, want Metrics", got)
+	}
+	if m.TotalJobs != 0 {
+		t.Errorf("TotalJobs = %d, want 0", m.TotalJobs)
+	}
+}
+
+func TestHandle_ScanReturnsNonNilForEmptyResult(t *testing.T) {
+	// scan フェーズが nil を返すと JSON で null になり、aggregate 側の欠落検出に
+	// 誤検知する。Scanner 実装（store）は 0 件でも非 nil を返す契約。
+	h := New(&fakeScanner{jobs: []Job{}}, &fakeWriter{}, fixedClock)
+
+	got, err := h.Handle(context.Background(), Event{Phase: PhaseScan})
+	if err != nil {
+		t.Fatalf("想定外エラー: %v", err)
+	}
+	jobs, ok := got.([]Job)
+	if !ok {
+		t.Fatalf("戻り値の型 = %T, want []Job", got)
+	}
+	if jobs == nil {
+		t.Error("0 件でも非 nil を期待したが nil（JSON で null になる）")
+	}
+}
+
 func TestHandle_Write(t *testing.T) {
 	w := &fakeWriter{}
 	h := New(&fakeScanner{}, w, fixedClock)

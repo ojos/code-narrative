@@ -139,6 +139,13 @@ func (h *Handler) Handle(ctx context.Context, ev Event) (any, error) {
 		return jobs, nil
 
 	case PhaseAggregate:
+		// scan 欠落を 0 件集計として通すと、Step Functions のペイロード組み立てミスに
+		// 気づかないまま「全指標ゼロ」の集計結果を書き込んでしまう。
+		// ジョブ 0 件の正常系は空配列 [] として渡るため nil とは区別できる
+		// （Scanner は 0 件でも非 nil の空スライスを返す）。
+		if ev.Scan == nil {
+			return nil, fmt.Errorf("%w: phase=%s に scan がありません", ErrInvalidPayload, PhaseAggregate)
+		}
 		return Aggregate(ev.Scan), nil
 
 	case PhaseWrite:
