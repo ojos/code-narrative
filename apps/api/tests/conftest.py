@@ -17,7 +17,8 @@ from fastapi.testclient import TestClient
 from moto import mock_aws
 
 # 設定モジュール読み込み前に必須環境変数とダミー AWS 資格情報を注入する。
-os.environ.setdefault("DYNAMODB_TABLE_NAME", "CodeNarratives")
+# 環境変数名は terraform(api モジュール) が注入する契約に合わせる。
+os.environ.setdefault("DYNAMODB_TABLE", "CodeNarratives")
 os.environ.setdefault("SQS_QUEUE_URL", "https://sqs.local/000000000000/jobs")
 os.environ.setdefault("AWS_REGION", "us-east-1")
 os.environ.setdefault("DYNAMODB_GSI_NAME", "user_id-created_at-index")
@@ -82,6 +83,7 @@ def _build_test_settings(
     """
 
     from app.config import Settings
+    from app.constants import ALLOWED_MODEL_IDS
 
     return Settings(
         table_name=_TABLE_NAME,
@@ -90,6 +92,7 @@ def _build_test_settings(
         gsi_name=_GSI_NAME,
         default_list_limit=20,
         max_list_limit=100,
+        allowed_model_ids=ALLOWED_MODEL_IDS,
         auth_allow_unverified_jwt=allow_unverified_jwt,
     )
 

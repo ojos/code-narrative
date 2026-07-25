@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 
-from .constants import DEFAULT_GSI_NAME
+from .constants import ALLOWED_MODEL_IDS, DEFAULT_GSI_NAME
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,9 @@ class Settings:
         gsi_name: ユーザー別一覧に用いる GSI 名。
         default_list_limit: 一覧取得の既定ページサイズ。
         max_list_limit: 一覧取得で許可する最大ページサイズ。
+        allowed_model_ids: model_id バリデーションで許可するモデル ID 集合。
+            env ``MODEL_WHITELIST``（terraform 注入）から構築し、未設定/空なら
+            :data:`constants.ALLOWED_MODEL_IDS` をフォールバックとする。
         auth_allow_unverified_jwt: 署名未検証の Bearer フォールバックを許可するか。
             本番では常に false（既定）。ローカル/テスト用途でのみ true にする。
     """
@@ -34,6 +37,7 @@ class Settings:
     gsi_name: str
     default_list_limit: int
     max_list_limit: int
+    allowed_model_ids: frozenset[str]
     auth_allow_unverified_jwt: bool
 
 
@@ -53,6 +57,26 @@ def _parse_bool(value: str | None) -> bool:
     if value is None:
         return False
     return value.strip().lower() in {"1", "true", "yes"}
+
+
+def _parse_model_whitelist(value: str | None) -> frozenset[str]:
+    """env ``MODEL_WHITELIST`` を許可モデル ID 集合へ解釈する。
+
+    カンマ区切りの各要素を前後空白トリムし、空要素は除去する。未設定・空・
+    トリム後に要素が残らない場合は :data:`constants.ALLOWED_MODEL_IDS` を
+    フォールバックとして返す（本番 env 不備でも既定の東京 2 モデルで動作継続）。
+
+    Args:
+        value: 環境変数 ``MODEL_WHITELIST`` の値（未設定なら ``None``）。
+
+    Returns:
+        許可モデル ID の集合。
+    """
+
+    if value is None:
+        return ALLOWED_MODEL_IDS
+    ids = frozenset(item.strip() for item in value.split(",") if item.strip())
+    return ids or ALLOWED_MODEL_IDS
 
 
 def _require_env(name: str) -> str:
@@ -83,12 +107,15 @@ def get_settings() -> Settings:
     """
 
     return Settings(
-        table_name=_require_env("DYNAMODB_TABLE_NAME"),
+        table_name=_require_env("DYNAMODB_TABLE"),
         queue_url=_require_env("SQS_QUEUE_URL"),
         aws_region=os.environ.get("AWS_REGION", "ap-northeast-1"),
         gsi_name=os.environ.get("DYNAMODB_GSI_NAME", DEFAULT_GSI_NAME),
         default_list_limit=int(os.environ.get("DEFAULT_LIST_LIMIT", "20")),
         max_list_limit=int(os.environ.get("MAX_LIST_LIMIT", "100")),
+        allowed_model_ids=_parse_model_whitelist(
+            os.environ.get("MODEL_WHITELIST")
+        ),
         auth_allow_unverified_jwt=_parse_bool(
             os.environ.get("AUTH_ALLOW_UNVERIFIED_JWT")
         ),

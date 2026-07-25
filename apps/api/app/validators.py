@@ -7,8 +7,7 @@ SPEC §4 ① のバリデーション要件（repo_url 形式 / model_id ホワ�
 from __future__ import annotations
 
 import re
-
-from .constants import ALLOWED_MODEL_IDS
+from collections.abc import Collection
 
 # https://github.com/{owner}/{repo} のみを許可する正規表現。
 # owner: 先頭英数字 + 英数字/ハイフン（ドットを含まないため `.`/`..` にならない）。
@@ -58,15 +57,22 @@ def validate_repo_url(repo_url: str) -> None:
         )
 
 
-def validate_model_id(model_id: str) -> None:
+def validate_model_id(
+    model_id: str, allowed_model_ids: Collection[str]
+) -> None:
     """model_id が許可モデルホワイトリストに含まれるか検証する。
+
+    許可集合はモジュール定数ではなく引数で受け取る。呼び出し側（サービス層）が
+    :attr:`app.config.Settings.allowed_model_ids`（env ``MODEL_WHITELIST`` 由来）を
+    渡すことで、terraform が注入する許可リストと実行時に整合させる。
 
     Args:
         model_id: 検証対象のモデル ID。
+        allowed_model_ids: 許可するモデル ID の集合。
 
     Raises:
-        ValidationError: ホワイトリストに存在しない場合。
+        ValidationError: 許可集合に存在しない場合。
     """
 
-    if model_id not in ALLOWED_MODEL_IDS:
+    if model_id not in allowed_model_ids:
         raise ValidationError("model_id が許可モデルホワイトリストに含まれていません")
