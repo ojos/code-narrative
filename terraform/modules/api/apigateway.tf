@@ -7,8 +7,10 @@ resource "aws_apigatewayv2_api" "this" {
   protocol_type = "HTTP"
 
   # SPA は CloudFront の別オリジンから execute-api を呼ぶため CORS が必須。
-  # HTTP API は cors_configuration がある場合、preflight(OPTIONS)を JWT Authorizer の
-  # 前段で自動応答するため、$default ルートに JWT を付けても preflight は 401 にならない。
+  # HTTP API の自動プリフライト応答は「どのルートにも一致しない OPTIONS」に対してのみ
+  # 働く。$default(catch-all)に JWT を付けると OPTIONS も $default に一致して Authorizer に
+  # 回り 401 になり、ブラウザの CORS プリフライトが失敗する。そのため下記のとおり実メソッド
+  # のみを明示ルートとして定義し、OPTIONS は無一致にして自動プリフライト(204)へ委ねる。
   cors_configuration {
     allow_origins = var.cors_allow_origins
     allow_headers = ["authorization", "content-type"]
@@ -36,9 +38,20 @@ resource "aws_apigatewayv2_authorizer" "jwt" {
   }
 }
 
-resource "aws_apigatewayv2_route" "default" {
+# 実メソッド/パスを明示ルートとして定義し、各々に Cognito JWT を適用する。
+# OPTIONS ルートは定義しない → プリフライトは cors_configuration による自動応答(204)。
+locals {
+  jwt_routes = [
+    "POST /api/v1/narratives",
+    "GET /api/v1/narratives",
+    "GET /api/v1/narratives/{job_id}",
+  ]
+}
+
+resource "aws_apigatewayv2_route" "app" {
+  for_each           = toset(local.jwt_routes)
   api_id             = aws_apigatewayv2_api.this.id
-  route_key          = "$default"
+  route_key          = each.value
   target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
   authorization_type = "JWT"
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
