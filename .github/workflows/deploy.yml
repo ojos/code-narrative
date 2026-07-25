@@ -94,8 +94,36 @@ jobs:
             -backend-config="bucket=${{ vars.TFSTATE_BUCKET }}" \
             -backend-config="region=${{ env.AWS_REGION }}"
       - name: Terraform Plan
+        id: plan
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform plan -no-color -input=false
+        run: terraform plan -no-color -input=false | tee "${RUNNER_TEMP}/plan.txt"
+
+      # SPEC §6: plan 結果を PR へコメント。長期キー不使用、GITHUB_TOKEN(gh)で投稿。
+      # plan 失敗時もコメントするため always()。GitHub のコメント上限に備え末尾を truncate。
+      - name: Comment plan on PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PLAN="$(cat "${RUNNER_TEMP}/plan.txt" 2>/dev/null || echo '(plan 出力なし)')"
+          NOTE=""
+          MAX=60000
+          if [ "${#PLAN}" -gt "$MAX" ]; then
+            PLAN="$(printf '%s' "$PLAN" | tail -c "$MAX")"
+            NOTE=$'\n\n> 出力が大きいため末尾のみ表示(truncated)。'
+          fi
+          {
+            echo "### Terraform Plan (\`${TF_WORKING_DIR}\`)"
+            echo ""
+            echo "<details><summary>plan 出力を表示</summary>"
+            echo ""
+            echo '```hcl'
+            printf '%s\n' "$PLAN"
+            echo '```'
+            echo ""
+            echo "</details>${NOTE}"
+          } > "${RUNNER_TEMP}/comment.md"
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file "${RUNNER_TEMP}/comment.md"
 
   # Python API: コンテナ build(push なし) + pytest。
   build-api:
@@ -195,14 +223,19 @@ jobs:
             -target=module.ecr_stats
 
       # 2) ECR リポジトリ URL を取得。
+      #    コマンド置換を echo に埋め込むと失敗しても set -e が発火しないため、
+      #    一旦変数へ代入して失敗時に abort させてから GITHUB_OUTPUT へ書き出す。
       - name: Resolve ECR repository URLs
         id: ecr
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
+          API_URL="$(terraform output -raw ecr_api_repository_url)"
+          WORKER_URL="$(terraform output -raw ecr_worker_repository_url)"
+          STATS_URL="$(terraform output -raw ecr_stats_repository_url)"
           {
-            echo "api=$(terraform output -raw ecr_api_repository_url)"
-            echo "worker=$(terraform output -raw ecr_worker_repository_url)"
-            echo "stats=$(terraform output -raw ecr_stats_repository_url)"
+            echo "api=$API_URL"
+            echo "worker=$WORKER_URL"
+            echo "stats=$STATS_URL"
           } >> "$GITHUB_OUTPUT"
 
       - name: Login to Amazon ECR
@@ -243,6 +276,9 @@ jobs:
         run: terraform apply -auto-approve -input=false
 
       # 5) Lambda 関数コードを push 済みイメージ(:SHA)へ更新し確実にロールアウト。
+      #    Lambda は image_uri を ignore_changes 済みで terraform はロールバックしない。
+      #    :latest 更新は関数へ自動反映されないため、:SHA 明示更新でデプロイを確定させる
+      #    (冗長ではなく設計上必要)。
       - name: Update Lambda function code
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
@@ -265,15 +301,27 @@ jobs:
       #    T4 の契約: config.js(非モジュール script)が window.APP_CONFIG を設定し、
       #    index.html が config.js → js/app.js の順で読み込む。ビルドが雛形の config.js を
       #    置く場合があるため、sync 前に本番値で必ず上書きする。
+      #    frontend 未実装(package.json/dist 無し)で config.js 生成・配信を実行すると、
+      #    dist が config.js のみとなり `s3 sync --delete` が既存資材を全消しするため、
+      #    ビルド成果物がある場合のみ以降の生成・配信ステップを実行する(deploy フラグで制御)。
       - name: Build frontend (guarded until app exists)
+        id: frontend
         run: |
           if [ -f apps/frontend/package.json ]; then
             (cd apps/frontend && npm ci && npm run build --if-present)
+            if [ -d apps/frontend/dist ]; then
+              echo "deploy=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+              echo "apps/frontend/dist が生成されなかったため frontend 配信をスキップ。"
+            fi
           else
-            echo "apps/frontend/package.json 未実装(Phase 3/T4)。frontend build をスキップ。"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "apps/frontend/package.json 未実装(Phase 3/T4)。frontend build/配信をスキップ。"
           fi
 
       - name: Generate frontend config.js (window.APP_CONFIG)
+        if: steps.frontend.outputs.deploy == 'true'
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           mkdir -p ../../../apps/frontend/dist
@@ -295,6 +343,7 @@ jobs:
           echo "生成した config.js:"; cat ../../../apps/frontend/dist/config.js
 
       - name: Deploy frontend (s3 sync + CloudFront invalidation)
+        if: steps.frontend.outputs.deploy == 'true'
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           BUCKET="$(terraform output -raw frontend_bucket_name)"
