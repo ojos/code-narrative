@@ -3,6 +3,7 @@ package bedrock
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -107,6 +108,40 @@ func TestGenerate_APIError(t *testing.T) {
 	_, err := g.Generate(context.Background(), "amazon.nova-lite-v1:0", model.Material{})
 	if err == nil {
 		t.Fatal("API エラーが伝播すべき")
+	}
+}
+
+func TestIsPermanent(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		// 恒久（failed 確定）。
+		{"ResourceNotFound", &brtypes.ResourceNotFoundException{Message: aws.String("Model use case details have not been submitted...")}, true},
+		{"Validation", &brtypes.ValidationException{Message: aws.String("invalid request")}, true},
+		{"AccessDenied", &brtypes.AccessDeniedException{Message: aws.String("no access")}, true},
+		{"ErrModelNotAllowed", ErrModelNotAllowed, true},
+		{"ErrEmptyResponse", ErrEmptyResponse, true},
+		// 恒久型が Generate と同様に %w でラップされていても検出できる。
+		{"WrappedResourceNotFound", fmt.Errorf("bedrock converse 呼び出しに失敗: %w", &brtypes.ResourceNotFoundException{}), true},
+
+		// 一時（再配信）。
+		{"Throttling", &brtypes.ThrottlingException{Message: aws.String("slow down")}, false},
+		{"ServiceUnavailable", &brtypes.ServiceUnavailableException{Message: aws.String("unavailable")}, false},
+		{"ModelNotReady", &brtypes.ModelNotReadyException{Message: aws.String("not ready")}, false},
+		{"ModelTimeout", &brtypes.ModelTimeoutException{Message: aws.String("timeout")}, false},
+		{"InternalServer", &brtypes.InternalServerException{Message: aws.String("boom")}, false},
+		{"WrappedThrottling", fmt.Errorf("bedrock converse 呼び出しに失敗: %w", &brtypes.ThrottlingException{}), false},
+		{"UnknownNetwork", errors.New("dial tcp: connection reset"), false},
+		{"Nil", nil, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := IsPermanent(c.err); got != c.want {
+				t.Errorf("IsPermanent(%v) = %v, want %v", c.err, got, c.want)
+			}
+		})
 	}
 }
 

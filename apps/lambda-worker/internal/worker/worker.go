@@ -207,9 +207,13 @@ func (w *Worker) Process(ctx context.Context, msg model.JobMessage) error {
 	}
 	material.CustomPrompt = msg.CustomPrompt
 
-	// 9. Bedrock 生成（API 障害 → 再配信）。
+	// 9. Bedrock 生成。恒久エラー(モデルアクセス未許可/不正リクエスト等) → failed 確定、
+	// それ以外(スロットリング等の一時障害) → 再配信。tarball 取得(§4)と対称な構造。
 	result, err := w.generator.Generate(ctx, msg.ModelID, *material)
 	if err != nil {
+		if bedrock.IsPermanent(err) {
+			return w.fail(ctx, log, msg.JobID, "生成に失敗（モデルアクセス未許可/不正リクエスト等）", err)
+		}
 		log.Error("bedrock 生成に失敗（再配信）", "error", err.Error())
 		return err
 	}
