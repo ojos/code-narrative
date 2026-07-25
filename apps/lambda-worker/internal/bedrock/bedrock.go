@@ -41,6 +41,61 @@ var ErrModelNotAllowed = errors.New("model_id がホワイトリストに存在�
 // ErrEmptyResponse は Converse 応答にテキストが含まれない場合に返る。
 var ErrEmptyResponse = errors.New("bedrock 応答にテキストが含まれません")
 
+// IsPermanent は err が恒久的な Bedrock エラー（再試行しても解決しない）かどうかを返す。
+//
+// 恒久（true）: モデル利用要件未充足・存在しないモデル/プロファイル
+// （*types.ResourceNotFoundException。本番で観測された Anthropic 利用規約未締結の
+// "Model use case details have not been submitted..." を含む）、不正リクエスト
+// （*types.ValidationException）、権限不足（*types.AccessDeniedException）、および
+// 内部の恒久エラー（ErrModelNotAllowed / ErrEmptyResponse）。これらは status=failed
+// に確定し再配信しない。
+//
+// 一時（false）: スロットリング・一時的なサービス不能・モデル未準備/タイムアウト・
+// 内部サーバエラー（*types.ThrottlingException / *types.ServiceUnavailableException /
+// *types.ModelNotReadyException / *types.ModelTimeoutException /
+// *types.InternalServerException）、およびネットワーク等の非型付きエラー。再配信で
+// 救える余地があるため、上記いずれにも該当しない未知エラーも安全側に倒し false とする。
+func IsPermanent(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrModelNotAllowed) || errors.Is(err, ErrEmptyResponse) {
+		return true
+	}
+
+	// 一時（再配信）側の型を先に判定する。恒久側より優先し、既知の一時型を
+	// 誤って恒久扱いしないようにする。
+	var (
+		throttling  *brtypes.ThrottlingException
+		unavailable *brtypes.ServiceUnavailableException
+		notReady    *brtypes.ModelNotReadyException
+		timeout     *brtypes.ModelTimeoutException
+		internal    *brtypes.InternalServerException
+	)
+	if errors.As(err, &throttling) ||
+		errors.As(err, &unavailable) ||
+		errors.As(err, &notReady) ||
+		errors.As(err, &timeout) ||
+		errors.As(err, &internal) {
+		return false
+	}
+
+	// 恒久（failed 確定）側の型。
+	var (
+		notFound     *brtypes.ResourceNotFoundException
+		validation   *brtypes.ValidationException
+		accessDenied *brtypes.AccessDeniedException
+	)
+	if errors.As(err, &notFound) ||
+		errors.As(err, &validation) ||
+		errors.As(err, &accessDenied) {
+		return true
+	}
+
+	// 未知エラーは安全側（再配信可能）に倒す。
+	return false
+}
+
 // ValidateModelID は model_id がホワイトリストに含まれるか検証する。
 func ValidateModelID(modelID string) error {
 	if _, ok := AllowedModels[modelID]; !ok {
