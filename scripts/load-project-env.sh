@@ -43,9 +43,10 @@ __ojos_load_project_env() {
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
     [[ -z "$line" || "$line" == \#* ]] && continue
-    # 先頭の `export ` 記法を許容。
+    # 先頭の `export` 記法を許容。区切りがスペース以外（タブ等）でも剥がせるよう、
+    # まず `export` 文字列だけを落としてから先頭空白をトリムする。
     if [[ "$line" == export[[:space:]]* ]]; then
-      line="${line#export }"
+      line="${line#export}"
       line="${line#"${line%%[![:space:]]*}"}"
     fi
     # KEY=VALUE 形式でなければスキップ。

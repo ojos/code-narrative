@@ -11,7 +11,9 @@ HELPER="$HERE/load-project-env.sh"
 inject_env_autoload() {
   local rc="$1"
   local marker="# >>> ojos-code-narrative project .env autoload >>>"
-  [[ -f "$rc" ]] || return 0
+  # rc が無いベースイメージでも autoload を効かせるため、存在しなければ作成する
+  # （touch は既存ファイルを切り詰めない）。zsh 未導入環境で作られても無害（誰も読まない）。
+  [[ -f "$rc" ]] || touch "$rc"
   grep -qF "$marker" "$rc" && return 0
   {
     echo ""
