@@ -46,11 +46,14 @@ def test_validate_repo_url_rejects_invalid(url: str) -> None:
         validate_repo_url(url)
 
 
-# terraform の MODEL_WHITELIST（東京 2 モデル）相当の許可集合。
+# terraform の MODEL_WHITELIST（東京 5 モデル）相当の許可集合。
 _ALLOWED = frozenset(
     {
         "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
         "amazon.nova-lite-v1:0",
+        "deepseek.v3.2",
+        "qwen.qwen3-32b-v1:0",
+        "google.gemma-3-12b-it",
     }
 )
 
@@ -60,6 +63,9 @@ _ALLOWED = frozenset(
     [
         "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
         "amazon.nova-lite-v1:0",
+        "deepseek.v3.2",
+        "qwen.qwen3-32b-v1:0",
+        "google.gemma-3-12b-it",
     ],
 )
 def test_validate_model_id_accepts_whitelisted(model_id: str) -> None:

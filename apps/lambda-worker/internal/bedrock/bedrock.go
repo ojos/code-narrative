@@ -30,9 +30,17 @@ const (
 // Claude は東京では "jp." 地域推論プロファイル ID での呼び出しが必須
 // （"us." / "global." は不可）。Llama 3.3 70B は東京で推論プロファイル提供が
 // ないため除外する。
+//
+// 作風の振れ幅は Temperature で作るため、Converse の inferenceConfig.temperature
+// に対応するモデルのみを採る。Claude Sonnet 5 / Opus 4.7 以降は temperature を
+// 送ると 400 になるため対象外（SPEC §4⑤）。あわせて、同じ入力から異なる作風を
+// 得られるようベンダーを重複させず 5 社から 1 モデルずつ選定する。
 var AllowedModels = map[string]struct{}{
 	"jp.anthropic.claude-sonnet-4-5-20250929-v1:0": {},
 	"amazon.nova-lite-v1:0":                        {},
+	"deepseek.v3.2":                                {},
+	"qwen.qwen3-32b-v1:0":                          {},
+	"google.gemma-3-12b-it":                        {},
 }
 
 // ErrModelNotAllowed はホワイトリスト外の model_id が指定された場合に返る。

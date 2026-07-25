@@ -255,10 +255,15 @@ code-narrative/
      - GitHub リポジトリ URL 入力欄（public リポジトリのみ）
      - カスタムプロンプト入力欄（「サイバーパンク風」「太宰治風」などのプリセットボタン付き）
      - **Bedrock モデル選択ドロップダウン**（許可モデルホワイトリスト）:
-       - `Amazon Nova Lite` (`amazon.nova-lite-v1:0`)
-       - `Claude Sonnet 4.5` (`jp.anthropic.claude-sonnet-4-5-20250929-v1:0`)
+       - `Claude Sonnet 4.5` (`jp.anthropic.claude-sonnet-4-5-20250929-v1:0`) — Anthropic
+       - `Amazon Nova Lite` (`amazon.nova-lite-v1:0`) — Amazon
+       - `DeepSeek V3.2` (`deepseek.v3.2`) — DeepSeek
+       - `Qwen3 32B` (`qwen.qwen3-32b-v1:0`) — Qwen
+       - `Gemma 3 12B IT` (`google.gemma-3-12b-it`) — Google
+       - ※ 作風の振れ幅を確保するため、ベンダーを重複させず 5 社から 1 モデルずつ選定する
+       - ※ 作風の振れ幅は §4② の `temperature` で作るため、Converse の `inferenceConfig.temperature` に対応するモデルに限定する。Claude Sonnet 5 / Opus 4.7 以降は `temperature` / `top_p` / `top_k` を送ると 400 になるため対象外（採用する場合は多様性をプロンプト側で作る設計変更が前提）
        - ※ デプロイ先 ap-northeast-1（東京）では Claude は `jp.` 地域推論プロファイル ID が必須（`us.` / `global.` は不可）。Llama 3.3 70B は東京で推論プロファイル提供がないため除外
-       - ※ 実装時に利用リージョンでの各モデルの提供状況を確認すること
+       - ※ 実装時に利用リージョンでの各モデルの提供状況を確認すること。モデル ID は AWS の model card ページの Programmatic Access 表を正とする（地域一覧ページの要約と食い違うことがある）
   3. **結果表示エリア**: ポーリングまたは結果取得 API により、生成されたショートショートを表示
   4. **履歴一覧**: ジョブ一覧 API により自分の変換履歴を表示
 
