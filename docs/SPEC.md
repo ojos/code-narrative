@@ -285,7 +285,7 @@ code-narrative/
   - CI/CD からの AWS 認証は GitHub OIDC フェデレーション（長期アクセスキー不使用）
   - OIDC ロールは plan 用（読み取り + state バケット / PR ブランチ）と apply 用（書き込み / main ブランチのみ）に分離する
 - **Terraform state**: S3 バックエンド（ロック有効）で管理。バケットおよび OIDC ロールはアカウント初期構築時に手作業で用意し、Terraform の管理対象外とする（ブートストラップ資材）
-- **コスト統制**: AWS Budgets（月次しきい値 3,000 円 / 50・80・100% および予測超過で通知）と Cost Anomaly Detection を有効化
+- **コスト統制**: AWS Budgets（月次しきい値 20 USD ≒ 3,000 円 / 50・80・100% および予測超過で通知。当該アカウントは USD 請求）と Cost Anomaly Detection を有効化
 
 ---
 

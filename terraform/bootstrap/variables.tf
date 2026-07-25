@@ -23,15 +23,15 @@ variable "tfstate_bucket_name" {
 }
 
 variable "budget_limit_amount" {
-  description = "月次予算のしきい値"
+  description = "月次予算のしきい値(当該アカウントは USD 請求。約20USD≒3,000円)"
   type        = string
-  default     = "3000"
+  default     = "20"
 }
 
 variable "budget_currency" {
-  description = "予算の通貨単位。アカウントの請求通貨に一致させること(JPY 請求でなければ USD 建てで再設定)"
+  description = "予算の通貨単位。当該アカウントの請求通貨は USD(AWS Budgets は USD のみ受付)"
   type        = string
-  default     = "JPY"
+  default     = "USD"
 }
 
 variable "notification_emails" {
