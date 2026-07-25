@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	brtypes "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
 	"github.com/ojos/code-narrative/apps/lambda-worker/internal/extract"
 	"github.com/ojos/code-narrative/apps/lambda-worker/internal/ghclient"
@@ -283,6 +285,32 @@ func TestProcess_BedrockErrorRetries(t *testing.T) {
 	}
 	if st.failedCnt != 0 {
 		t.Error("Bedrock 一時障害では failed を記録しない")
+	}
+}
+
+// TestProcess_BedrockPermanentErrorMarksFailed は、恒久的な Bedrock エラー
+// （モデル利用要件未充足等）が業務エラーとして status=failed に記録され、
+// 再配信されない（nil 返し）ことを検証する。本番で観測された
+// ResourceNotFoundException を代表例とする。
+func TestProcess_BedrockPermanentErrorMarksFailed(t *testing.T) {
+	st := &mockStore{}
+	gen := &mockGenerator{err: &brtypes.ResourceNotFoundException{
+		Message: aws.String("Model use case details have not been submitted..."),
+	}}
+	w := newWorker(st, &mockFetcher{}, &mockExtractor{}, gen)
+
+	err := w.Process(context.Background(), validMsg())
+	if err != nil {
+		t.Fatalf("恒久エラーは再配信せず nil を返すべき: %v", err)
+	}
+	if st.failedCnt != 1 {
+		t.Fatal("MarkFailed が呼ばれていない")
+	}
+	if !strings.Contains(st.failedMsg, "生成に失敗") {
+		t.Errorf("error_message = %q", st.failedMsg)
+	}
+	if st.completed != nil {
+		t.Error("恒久エラーで completed を書いてはならない")
 	}
 }
 
