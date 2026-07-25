@@ -19,11 +19,14 @@ test("ホワイトリストは東京提供の SPEC 5 モデル", () => {
 });
 
 test("ベンダーが重複していない", () => {
-  // 作風の振れ幅を確保するための制約（SPEC §4⑤）。id の先頭要素をベンダーとみなす
-  // （地理プレフィックス付きは 2 要素目がベンダー）。
+  // 作風の振れ幅を確保するための制約（SPEC §4⑤）。id の先頭要素をベンダーとみなす。
+  // 推論プロファイル ID はスコープ(us/eu/apac/jp/global)が先頭に付くため、その場合は
+  // 2 要素目がベンダー。global.anthropic.* と jp.anthropic.* を別ベンダーと誤認すると
+  // 同一ベンダーの重複を見逃す。
   const vendors = ALLOWED_MODELS.map((m) => {
     const parts = m.id.split(".");
-    return /^(us|eu|apac|jp)$/.test(parts[0]) ? parts[1] : parts[0];
+    const scoped = /^(us|eu|apac|jp|global)$/.test(parts[0]) && parts.length > 1;
+    return scoped ? parts[1] : parts[0];
   });
   assert.equal(new Set(vendors).size, vendors.length, `ベンダー重複: ${vendors}`);
 });

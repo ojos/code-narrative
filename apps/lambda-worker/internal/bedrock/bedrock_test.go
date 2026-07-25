@@ -39,13 +39,16 @@ func TestAllowedModelsVendorsAreDistinct(t *testing.T) {
 		t.Errorf("許可モデル数 = %d, want %d", len(AllowedModels), wantCount)
 	}
 
-	geoPrefixes := map[string]struct{}{"us": {}, "eu": {}, "apac": {}, "jp": {}}
+	// 推論プロファイル ID のスコーププレフィックス。地理スコープ(us/eu/apac/jp)に
+	// 加えて global. も対象にする。global.anthropic.* と jp.anthropic.* を別ベンダーと
+	// 誤認すると、同一ベンダーの重複を見逃す。
+	scopePrefixes := map[string]struct{}{"us": {}, "eu": {}, "apac": {}, "jp": {}, "global": {}}
 	seen := make(map[string]string, wantCount)
 	for id := range AllowedModels {
 		parts := strings.Split(id, ".")
 		vendor := parts[0]
-		// 地理プレフィックス付き(推論プロファイル ID)は 2 要素目がベンダー。
-		if _, ok := geoPrefixes[vendor]; ok && len(parts) > 1 {
+		// スコーププレフィックス付きは 2 要素目がベンダー。
+		if _, ok := scopePrefixes[vendor]; ok && len(parts) > 1 {
 			vendor = parts[1]
 		}
 		if prev, dup := seen[vendor]; dup {
