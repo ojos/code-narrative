@@ -489,3 +489,6 @@ terraform/environments/*/backend.hcl
 # --- apps/frontend: 実行時設定の実ファイル ---
 # 実値は CI がデプロイ時に生成する。config.example.js(雛形)のみコミットする。
 apps/frontend/config.js
+
+# 委任完了済みの phase2 有効化フラグ(非機密の deploy フラグ)は追跡する
+!terraform/environments/prod/prod.auto.tfvars
