@@ -8,6 +8,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	ddbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
+	"github.com/ojos/code-narrative/apps/lambda-stats/internal/stats"
 )
 
 // fakeDynamo は DynamoAPI のテスト代替。Scan は用意した応答を順に返す。
@@ -168,6 +170,67 @@ func TestPutMetric(t *testing.T) {
 	}
 	if _, ok := item["metric"]; !ok {
 		t.Error("metric 属性が書き込まれていない")
+	}
+}
+
+// TestPutMetric_WritesSnakeCaseKeys は集計レコードの属性名を snake_case に固定する。
+//
+// attributevalue.Marshal は json タグへフォールバックしないため、dynamodbav タグを
+// 落とすとフィールド名そのまま(PascalCase)で書き込まれる。テーブル内の他属性は
+// snake_case のため、集計レコードだけキー命名が食い違い、読み手側で静かに欠落する。
+func TestPutMetric_WritesSnakeCaseKeys(t *testing.T) {
+	fake := &fakeDynamo{}
+
+	payload := map[string]any{
+		"total_jobs": int64(2),
+		"items": []stats.ModelUsage{
+			{ModelID: "deepseek.v3.2", Count: 2, Ratio: 1.0},
+		},
+	}
+	if err := New(fake, "T").PutMetric(context.Background(), "STATS#2026-07-25#model_usage", payload); err != nil {
+		t.Fatalf("想定外エラー: %v", err)
+	}
+
+	metric, ok := fake.putIn[0].Item["metric"].(*ddbtypes.AttributeValueMemberM)
+	if !ok {
+		t.Fatalf("metric の型 = %T, want M", fake.putIn[0].Item["metric"])
+	}
+	items, ok := metric.Value["items"].(*ddbtypes.AttributeValueMemberL)
+	if !ok {
+		t.Fatalf("items の型 = %T, want L", metric.Value["items"])
+	}
+	first, ok := items.Value[0].(*ddbtypes.AttributeValueMemberM)
+	if !ok {
+		t.Fatalf("items[0] の型 = %T, want M", items.Value[0])
+	}
+
+	for _, key := range []string{"model_id", "count", "ratio"} {
+		if _, ok := first.Value[key]; !ok {
+			got := make([]string, 0, len(first.Value))
+			for k := range first.Value {
+				got = append(got, k)
+			}
+			t.Errorf("属性 %q が無い。実際のキー: %v (dynamodbav タグ漏れの可能性)", key, got)
+		}
+	}
+}
+
+func TestPutMetric_TokenUsageKeys(t *testing.T) {
+	fake := &fakeDynamo{}
+
+	usage := stats.TokenUsage{InputTokens: 10, OutputTokens: 20, TotalTokens: 30}
+	if err := New(fake, "T").PutMetric(context.Background(), "STATS#2026-07-25#token_usage", usage); err != nil {
+		t.Fatalf("想定外エラー: %v", err)
+	}
+
+	metric, ok := fake.putIn[0].Item["metric"].(*ddbtypes.AttributeValueMemberM)
+	if !ok {
+		t.Fatalf("metric の型 = %T, want M", fake.putIn[0].Item["metric"])
+	}
+	for _, key := range []string{"input_tokens", "output_tokens", "total_tokens"} {
+		if _, ok := metric.Value[key]; !ok {
+			t.Errorf("属性 %q が無い (dynamodbav タグ漏れの可能性)", key)
+		}
 	}
 }
 

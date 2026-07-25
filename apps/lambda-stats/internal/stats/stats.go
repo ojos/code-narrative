@@ -29,6 +29,12 @@ const PromptTrendLimit = 10
 // ErrUnknownPhase は未知の phase を受け取った場合に返る。
 var ErrUnknownPhase = errors.New("未知の phase です")
 
+// ErrInvalidPayload は phase は既知だが必要なパラメータが欠けている場合に返る。
+//
+// ErrUnknownPhase と区別する。両者を混ぜると、Step Functions のペイロード組み立て
+// ミスを「phase 名が誤っている」と誤って切り分けてしまう。
+var ErrInvalidPayload = errors.New("phase に必要なパラメータが不足しています")
+
 // Job は集計対象となる変換ジョブの必要最小限の射影（SPEC §4③）。
 //
 // Step Functions のペイロード上限（256KB）を避けるため、Scan では集計に使う
@@ -41,24 +47,31 @@ type Job struct {
 	OutputTokens int64  `json:"output_tokens"`
 }
 
+// 以下 3 つの構造体は Step Functions のペイロード(JSON)と DynamoDB の集計レコード
+// の双方になるため、json / dynamodbav の両方のタグを持たせる。
+//
+// attributevalue.Marshal は json タグへフォールバックせず、dynamodbav が無いと
+// フィールド名そのまま(PascalCase)で書き込む。テーブル内の他属性は snake_case
+// のため、タグを落とすと集計レコードだけキー命名が食い違う。
+
 // ModelUsage はモデル別の利用件数と割合。
 type ModelUsage struct {
-	ModelID string  `json:"model_id"`
-	Count   int64   `json:"count"`
-	Ratio   float64 `json:"ratio"`
+	ModelID string  `json:"model_id" dynamodbav:"model_id"`
+	Count   int64   `json:"count" dynamodbav:"count"`
+	Ratio   float64 `json:"ratio" dynamodbav:"ratio"`
 }
 
 // PromptTrend はカスタムプロンプトの出現件数。
 type PromptTrend struct {
-	Prompt string `json:"prompt"`
-	Count  int64  `json:"count"`
+	Prompt string `json:"prompt" dynamodbav:"prompt"`
+	Count  int64  `json:"count" dynamodbav:"count"`
 }
 
 // TokenUsage はトークン使用量の合計。
 type TokenUsage struct {
-	InputTokens  int64 `json:"input_tokens"`
-	OutputTokens int64 `json:"output_tokens"`
-	TotalTokens  int64 `json:"total_tokens"`
+	InputTokens  int64 `json:"input_tokens" dynamodbav:"input_tokens"`
+	OutputTokens int64 `json:"output_tokens" dynamodbav:"output_tokens"`
+	TotalTokens  int64 `json:"total_tokens" dynamodbav:"total_tokens"`
 }
 
 // Metrics は集計結果一式（SPEC §4④ の 3 指標）。
@@ -130,7 +143,7 @@ func (h *Handler) Handle(ctx context.Context, ev Event) (any, error) {
 
 	case PhaseWrite:
 		if ev.Metrics == nil {
-			return nil, fmt.Errorf("%w: metrics が空です", ErrUnknownPhase)
+			return nil, fmt.Errorf("%w: phase=%s に metrics がありません", ErrInvalidPayload, PhaseWrite)
 		}
 		return h.write(ctx, *ev.Metrics)
 

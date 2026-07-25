@@ -203,8 +203,17 @@ func TestHandle_WriteWithoutMetrics(t *testing.T) {
 	h := New(&fakeScanner{}, &fakeWriter{}, fixedClock)
 
 	// metrics 欠落で黙って空レコードを書かないこと。
-	if _, err := h.Handle(context.Background(), Event{Phase: PhaseWrite}); err == nil {
-		t.Error("metrics 欠落でエラーを期待したが nil")
+	_, err := h.Handle(context.Background(), Event{Phase: PhaseWrite})
+	if err == nil {
+		t.Fatal("metrics 欠落でエラーを期待したが nil")
+	}
+	// phase 名は既知なので ErrUnknownPhase にしない。混同するとペイロード組み立て
+	// ミスを「phase 名が誤っている」と誤って切り分けてしまう。
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Errorf("ErrInvalidPayload を期待したが: %v", err)
+	}
+	if errors.Is(err, ErrUnknownPhase) {
+		t.Errorf("ErrUnknownPhase と混同している: %v", err)
 	}
 }
 
