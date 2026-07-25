@@ -10,6 +10,8 @@ import (
 	"context"
 	"log"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -27,6 +29,7 @@ import (
 const (
 	envTableName   = "DYNAMODB_TABLE"
 	envGitHubToken = "GITHUB_TOKEN"
+	envLeaseSecs   = "PROCESSING_LEASE_SECONDS"
 )
 
 func main() {
@@ -47,6 +50,24 @@ func main() {
 	fetcher := ghclient.New(os.Getenv(envGitHubToken)) // トークン任意
 	gen := bedrock.NewGenerator(bedrockruntime.NewFromConfig(awsCfg))
 
-	w := worker.New(st, fetcher, extract.Service{}, gen, worker.DefaultConfig())
+	cfg := worker.DefaultConfig()
+	cfg.ProcessingLease = leaseFromEnv(cfg.ProcessingLease)
+
+	w := worker.New(st, fetcher, extract.Service{}, gen, cfg)
 	lambda.Start(w.Handle)
+}
+
+// leaseFromEnv は環境変数 PROCESSING_LEASE_SECONDS（秒）を読み取り、
+// 未設定・不正・非正の場合は fallback を返す。
+func leaseFromEnv(fallback time.Duration) time.Duration {
+	raw := os.Getenv(envLeaseSecs)
+	if raw == "" {
+		return fallback
+	}
+	secs, err := strconv.Atoi(raw)
+	if err != nil || secs <= 0 {
+		log.Printf("環境変数 %s が不正（%q）のため既定値を使用します", envLeaseSecs, raw)
+		return fallback
+	}
+	return time.Duration(secs) * time.Second
 }

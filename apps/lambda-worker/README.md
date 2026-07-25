@@ -30,6 +30,12 @@ SQS をトリガーに起動し、GitHub リポジトリを取得・解析して
 | `DYNAMODB_TABLE` | 必須 | ジョブレコードを格納する DynamoDB テーブル名 |
 | `AWS_REGION` | 必須 | AWS SDK が解決するリージョン（Lambda ランタイムが自動設定） |
 | `GITHUB_TOKEN` | 任意 | 設定時は GitHub API のレート制限を 60→5,000 回/時へ引き上げ |
+| `PROCESSING_LEASE_SECONDS` | 任意 | processing リースの有効期間（既定 900）。可視性タイムアウト相当以上を想定。一時障害で processing のまま取り残されたジョブは、この期間経過後の再配信で再取得される |
+
+## 信頼性メモ
+
+- **processing リース**: `MarkProcessing` は「status=queued、または status=processing かつ updated_at がリース失効（stale）」の条件付き更新で processing を獲得する。これにより、MarkProcessing 成功後に一時障害で再配信されたジョブがリース失効後に再取得され、completed/failed へ確実に遷移する（processing のまま放置＝結果喪失を防止）。同時二重配信は条件付き書込で片方のみ成功し、他方はスキップされる。
+- **tarball ダウンロードのタイムアウト**: 取得〜`Untar` の期限は `ctx`（Lambda デッドライン）で制御する。ダウンロード用 HTTP クライアントには `Client.Timeout` を設定しない（本文読了までのハード期限が展開全体に及び、正当な大リポジトリを偽陰性で failed 化するのを避けるため）。コミットログ取得側は 60 秒のタイムアウトを維持。
 
 ## 開発
 

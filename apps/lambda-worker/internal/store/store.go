@@ -27,9 +27,10 @@ const (
 	statusFailed     = "failed"
 )
 
-// ErrAlreadyProcessing は status が queued 以外のため processing へ遷移できなかった
-// 場合に返る（at-least-once 配信での二重処理を冪等にスキップするための番兵）。
-var ErrAlreadyProcessing = errors.New("ジョブは既に処理済みまたは処理中です")
+// ErrAlreadyProcessing は processing リースが有効な別ワーカーが処理中、または
+// 既に completed/failed のため processing を獲得できなかった場合に返る
+// （at-least-once 配信での二重処理を冪等にスキップするための番兵）。
+var ErrAlreadyProcessing = errors.New("ジョブは処理中（リース有効）または処理済みです")
 
 // DynamoAPI は本パッケージが必要とする DynamoDB 操作の最小インターフェイス。
 //
@@ -56,21 +57,32 @@ func (s *Store) nowISO() string {
 	return s.now().UTC().Format(time.RFC3339)
 }
 
-// MarkProcessing は status が queued の場合のみ processing へ条件付き更新する。
+// MarkProcessing はリース方式で processing を獲得する条件付き更新を行う。
 //
-// 条件不一致（既に processing/completed/failed）の場合は ErrAlreadyProcessing を返す。
-func (s *Store) MarkProcessing(ctx context.Context, jobID string) error {
+// 条件は「status=queued（未着手）、または status=processing かつ updated_at が
+// cutoff より前（=リース失効・stale）」。獲得成功時は status=processing、
+// updated_at=now（=リース更新）を書き込む。cutoff は呼び出し側が算出した
+// 「now - リース期間」の ISO8601 UTC（末尾 Z）文字列で、updated_at と同形式のため
+// 辞書順比較で時系列比較できる。
+//
+// 条件不一致（processing リースが有効、または既に completed/failed）の場合は
+// ErrAlreadyProcessing を返す。これにより、一時障害で processing のまま取り残された
+// ジョブが後続の再配信でリース失効後に再取得され、completed/failed へ到達できる。
+func (s *Store) MarkProcessing(ctx context.Context, jobID, cutoff string) error {
 	_, err := s.api.UpdateItem(ctx, &dynamodb.UpdateItemInput{
-		TableName:           aws.String(s.tableName),
-		Key:                 keyOf(jobID),
-		UpdateExpression:    aws.String("SET #status = :processing, updated_at = :now"),
-		ConditionExpression: aws.String("#status = :queued"),
+		TableName:        aws.String(s.tableName),
+		Key:              keyOf(jobID),
+		UpdateExpression: aws.String("SET #status = :processing, updated_at = :now"),
+		ConditionExpression: aws.String(
+			"#status = :queued OR (#status = :processing AND #updated_at < :cutoff)"),
 		ExpressionAttributeNames: map[string]string{
-			"#status": "status",
+			"#status":     "status",
+			"#updated_at": "updated_at",
 		},
 		ExpressionAttributeValues: map[string]ddbtypes.AttributeValue{
 			":processing": &ddbtypes.AttributeValueMemberS{Value: statusProcessing},
 			":queued":     &ddbtypes.AttributeValueMemberS{Value: statusQueued},
+			":cutoff":     &ddbtypes.AttributeValueMemberS{Value: cutoff},
 			":now":        &ddbtypes.AttributeValueMemberS{Value: s.nowISO()},
 		},
 	})

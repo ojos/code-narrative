@@ -30,19 +30,27 @@ var ErrInvalidRepoURL = errors.New("repo_url は https://github.com/{owner}/{rep
 
 // Client は GitHub の tarball / REST API へアクセスする HTTP クライアント。
 type Client struct {
-	httpClient   *http.Client
-	token        string
-	apiBase      string
-	codeloadBase string
+	// httpClient は REST API（コミットログ等）用。応答が小さいためハード
+	// タイムアウトを設定する。
+	httpClient *http.Client
+	// downloadClient は tarball ダウンロード用。Client.Timeout は本文読了までの
+	// ハード期限であり、Body を呼び出し側（Untar）へ渡す tarball 取得では展開全体に
+	// 及んで正当な大リポジトリを偽陰性で失敗させる。そのため Timeout は設定せず、
+	// 取得〜展開の期限は ctx（Lambda デッドライン）で制御する。
+	downloadClient *http.Client
+	token          string
+	apiBase        string
+	codeloadBase   string
 }
 
 // New は GitHub クライアントを生成する。token が空文字の場合は未認証で動作する。
 func New(token string) *Client {
 	return &Client{
-		httpClient:   &http.Client{Timeout: 60 * time.Second},
-		token:        token,
-		apiBase:      defaultAPIBase,
-		codeloadBase: defaultCodeloadBase,
+		httpClient:     &http.Client{Timeout: 60 * time.Second},
+		downloadClient: &http.Client{},
+		token:          token,
+		apiBase:        defaultAPIBase,
+		codeloadBase:   defaultCodeloadBase,
 	}
 }
 
@@ -84,7 +92,7 @@ func (c *Client) FetchTarball(ctx context.Context, owner, repo string) (io.ReadC
 		return nil, fmt.Errorf("tarball リクエスト生成に失敗: %w", err)
 	}
 	c.setAuth(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.downloadClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("tarball 取得に失敗: %w", err)
 	}

@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 
@@ -47,7 +48,9 @@ type Generator interface {
 
 // Store は DynamoDB へのジョブ状態書き込みを抽象化する。
 type Store interface {
-	MarkProcessing(ctx context.Context, jobID string) error
+	// MarkProcessing はリース方式で processing を獲得する。cutoff はリース失効の
+	// 判定境界（now - リース期間）の ISO8601 UTC 文字列。
+	MarkProcessing(ctx context.Context, jobID, cutoff string) error
 	MarkCompleted(ctx context.Context, jobID string, res store.CompletedResult) error
 	MarkFailed(ctx context.Context, jobID, errMessage string) error
 }
@@ -62,6 +65,10 @@ type Config struct {
 	MaterialMaxBytes int
 	// CommitLimit は取得するコミット件数（30）。
 	CommitLimit int
+	// ProcessingLease は processing リースの有効期間（既定 900 秒）。
+	// この期間を過ぎても completed/failed に至らない processing ジョブは、
+	// 再配信時に stale とみなされ再取得される。可視性タイムアウト相当以上を想定。
+	ProcessingLease time.Duration
 }
 
 // DefaultConfig は SPEC §4② の既定値を返す。
@@ -71,6 +78,7 @@ func DefaultConfig() Config {
 		MaxExtractBytes:  200 * 1024 * 1024,
 		MaterialMaxBytes: 100 * 1024,
 		CommitLimit:      30,
+		ProcessingLease:  900 * time.Second,
 	}
 }
 
@@ -83,6 +91,8 @@ type Worker struct {
 	cfg       Config
 	// newLogger は job_id 付きロガーの生成関数（テストで差し替え可能）。
 	newLogger func(jobID string) *logging.Logger
+	// now は現在時刻取得関数（リース cutoff 算出用。テストで固定するため注入可能）。
+	now func() time.Time
 }
 
 // New は依存と設定から Worker を生成する。
@@ -94,6 +104,7 @@ func New(st Store, fetcher RepoFetcher, extractor Extractor, gen Generator, cfg 
 		generator: gen,
 		cfg:       cfg,
 		newLogger: logging.New,
+		now:       time.Now,
 	}
 }
 
@@ -126,10 +137,11 @@ func (w *Worker) Handle(ctx context.Context, event events.SQSEvent) (events.SQSE
 func (w *Worker) Process(ctx context.Context, msg model.JobMessage) error {
 	log := w.newLogger(msg.JobID)
 
-	// 1. 冪等な processing 遷移（queued のときのみ成功）。
-	if err := w.store.MarkProcessing(ctx, msg.JobID); err != nil {
+	// 1. リース方式で processing を獲得（queued、または stale な processing のみ成功）。
+	cutoff := w.now().UTC().Add(-w.cfg.ProcessingLease).Format(time.RFC3339)
+	if err := w.store.MarkProcessing(ctx, msg.JobID, cutoff); err != nil {
 		if errors.Is(err, store.ErrAlreadyProcessing) {
-			log.Info("既に処理済み/処理中のためスキップ")
+			log.Info("処理中（リース有効）または処理済みのためスキップ")
 			return nil
 		}
 		log.Error("processing 遷移に失敗（再配信）", "error", err.Error())

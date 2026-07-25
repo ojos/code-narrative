@@ -34,6 +34,32 @@ func newStore(api DynamoAPI) *Store {
 	return s
 }
 
+// leaseEvalDynamo は保持レコードに対してリース条件式を実際に評価する fake。
+//
+// DynamoDB のサーバ側条件評価を模し、stale / fresh の分岐を行動レベルで検証する。
+// 対応するのは MarkProcessing のリース条件のみ。
+type leaseEvalDynamo struct {
+	status       string
+	updatedAt    string
+	updatedCount int
+}
+
+func (f *leaseEvalDynamo) UpdateItem(_ context.Context, in *dynamodb.UpdateItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error) {
+	cutoff := in.ExpressionAttributeValues[":cutoff"].(*ddbtypes.AttributeValueMemberS).Value
+	now := in.ExpressionAttributeValues[":now"].(*ddbtypes.AttributeValueMemberS).Value
+
+	// #status = :queued OR (#status = :processing AND #updated_at < :cutoff)
+	acquirable := f.status == statusQueued ||
+		(f.status == statusProcessing && f.updatedAt < cutoff)
+	if !acquirable {
+		return nil, &ddbtypes.ConditionalCheckFailedException{}
+	}
+	f.status = statusProcessing
+	f.updatedAt = now
+	f.updatedCount++
+	return &dynamodb.UpdateItemOutput{}, nil
+}
+
 // sVal は文字列属性値を取り出す。
 func sVal(t *testing.T, av ddbtypes.AttributeValue) string {
 	t.Helper()
@@ -44,32 +70,88 @@ func sVal(t *testing.T, av ddbtypes.AttributeValue) string {
 	return s.Value
 }
 
-func TestMarkProcessing_Success(t *testing.T) {
+const testCutoff = "2026-07-25T00:00:00Z"
+
+// TestMarkProcessing_AcquiresLease は queued または stale な processing を獲得できる
+// 場合（DynamoDB が条件成立で成功を返す場合）、リース方式の条件式・cutoff・更新後の
+// status/updated_at が正しく組み立てられることを検証する。
+func TestMarkProcessing_AcquiresLease(t *testing.T) {
 	fake := &fakeDynamo{}
 	s := newStore(fake)
 
-	if err := s.MarkProcessing(context.Background(), "job-1"); err != nil {
+	if err := s.MarkProcessing(context.Background(), "job-1", testCutoff); err != nil {
 		t.Fatalf("MarkProcessing: %v", err)
 	}
 	if len(fake.inputs) != 1 {
 		t.Fatalf("UpdateItem 呼び出し数 = %d", len(fake.inputs))
 	}
 	in := fake.inputs[0]
-	if aws.ToString(in.ConditionExpression) != "#status = :queued" {
+
+	wantCond := "#status = :queued OR (#status = :processing AND #updated_at < :cutoff)"
+	if aws.ToString(in.ConditionExpression) != wantCond {
 		t.Errorf("ConditionExpression = %q", aws.ToString(in.ConditionExpression))
+	}
+	if in.ExpressionAttributeNames["#updated_at"] != "updated_at" {
+		t.Errorf("#updated_at のマッピングが無い: %v", in.ExpressionAttributeNames)
+	}
+	if got := sVal(t, in.ExpressionAttributeValues[":cutoff"]); got != testCutoff {
+		t.Errorf(":cutoff = %q", got)
 	}
 	if got := sVal(t, in.ExpressionAttributeValues[":processing"]); got != statusProcessing {
 		t.Errorf(":processing = %q", got)
 	}
+	// updated_at は now（固定 2026-07-25T00:00:00Z）でリース更新される。
+	if got := sVal(t, in.ExpressionAttributeValues[":now"]); got != "2026-07-25T00:00:00Z" {
+		t.Errorf(":now = %q", got)
+	}
 }
 
-func TestMarkProcessing_ConditionFailed(t *testing.T) {
+// TestMarkProcessing_FreshLeaseSkips は processing リースが有効（fresh）または
+// 既に completed/failed のとき、DynamoDB が条件不成立を返し ErrAlreadyProcessing に
+// 変換されること（従来の冪等スキップ）を検証する。
+func TestMarkProcessing_FreshLeaseSkips(t *testing.T) {
 	fake := &fakeDynamo{err: &ddbtypes.ConditionalCheckFailedException{}}
 	s := newStore(fake)
 
-	err := s.MarkProcessing(context.Background(), "job-1")
+	err := s.MarkProcessing(context.Background(), "job-1", testCutoff)
 	if !errors.Is(err, ErrAlreadyProcessing) {
 		t.Fatalf("ErrAlreadyProcessing を期待したが: %v", err)
+	}
+}
+
+// TestMarkProcessing_ProcessingFreshBehavioral は、processing かつ updated_at が
+// cutoff 以降（fresh）のジョブに対し、条件を実評価してスキップ（ErrAlreadyProcessing）
+// されることを検証する（再配信2回目・リース有効ケース）。
+func TestMarkProcessing_ProcessingFreshBehavioral(t *testing.T) {
+	cutoff := "2026-07-25T00:00:00Z"
+	fake := &leaseEvalDynamo{status: statusProcessing, updatedAt: "2026-07-25T00:05:00Z"} // cutoff より後 = fresh
+	s := newStore(fake)
+
+	err := s.MarkProcessing(context.Background(), "job-1", cutoff)
+	if !errors.Is(err, ErrAlreadyProcessing) {
+		t.Fatalf("fresh リースはスキップされるべき: %v", err)
+	}
+	if fake.updatedCount != 0 {
+		t.Error("fresh リースでレコードを更新してはならない")
+	}
+}
+
+// TestMarkProcessing_ProcessingStaleBehavioral は、processing かつ updated_at が
+// cutoff より前（stale=リース失効）のジョブに対し、条件を実評価して再取得が
+// 成功し、updated_at がリース更新されることを検証する（一時障害の取り残し回収）。
+func TestMarkProcessing_ProcessingStaleBehavioral(t *testing.T) {
+	cutoff := "2026-07-25T00:00:00Z"
+	fake := &leaseEvalDynamo{status: statusProcessing, updatedAt: "2026-07-24T23:00:00Z"} // cutoff より前 = stale
+	s := newStore(fake)
+
+	if err := s.MarkProcessing(context.Background(), "job-1", cutoff); err != nil {
+		t.Fatalf("stale リースは再取得成功すべき: %v", err)
+	}
+	if fake.updatedCount != 1 {
+		t.Fatalf("再取得でレコードが更新されるべき: count=%d", fake.updatedCount)
+	}
+	if fake.updatedAt != "2026-07-25T00:00:00Z" {
+		t.Errorf("updated_at がリース更新されていない: %q", fake.updatedAt)
 	}
 }
 
