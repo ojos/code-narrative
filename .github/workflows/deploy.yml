@@ -1,21 +1,32 @@
 name: deploy
 
-# PR: terraform plan(plan ロール) / main マージ: terraform apply(apply ロール)
+# 2 段 CI/CD(SPEC §6)。パス判定を共通の前段に置き、変更されたものだけを検証/デプロイする。
+#   - PR: terraform plan(plan ロール) + アプリのコンテナ build(push なし)・テスト
+#   - main マージ: ECR 先行 apply → build/push → 全体 apply → Lambda 更新 → frontend 配信
 # AWS 認証は GitHub OIDC。長期アクセスキーは使わない。
-# ロール ARN はリポジトリ変数に設定する:
+#
+# 事前設定(リポジトリ変数):
 #   gh variable set AWS_PLAN_ROLE_ARN  --body <bootstrap の terraform_plan_role_arn>
 #   gh variable set AWS_APPLY_ROLE_ARN --body <bootstrap の terraform_apply_role_arn>
 #   gh variable set TFSTATE_BUCKET     --body <bootstrap の tfstate_bucket>
+#
+# OIDC sub の固定:
+#   - plan ロールの信頼ポリシーは PR の `:pull_request` を許可
+#   - apply ロールの信頼ポリシーは `:environment:production` を許可(immutable sub)
+#     このため apply/ECR push を行う deploy ジョブは `environment: production` を必須とする
+#     (environment を外すと OIDC sub が変わり AssumeRole が拒否される)。
 
 on:
   pull_request:
     paths:
       - "terraform/**"
+      - "apps/**"
       - ".github/workflows/deploy.yml"
   push:
     branches: [main]
     paths:
       - "terraform/**"
+      - "apps/**"
       - ".github/workflows/deploy.yml"
 
 permissions:
@@ -27,9 +38,47 @@ env:
   AWS_REGION: ap-northeast-1
   TF_WORKING_DIR: terraform/environments/prod
 
+# 同一 ref の実行は 1 本に集約し、apply の多重実行を防ぐ。
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  # ---- 共通前段: パス判定(Paths Filter) ----
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      terraform: ${{ steps.filter.outputs.terraform }}
+      api: ${{ steps.filter.outputs.api }}
+      worker: ${{ steps.filter.outputs.worker }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      workflow: ${{ steps.filter.outputs.workflow }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            terraform:
+              - 'terraform/**'
+            api:
+              - 'apps/api/**'
+            worker:
+              - 'apps/lambda-worker/**'
+            frontend:
+              - 'apps/frontend/**'
+            workflow:
+              - '.github/workflows/deploy.yml'
+
+  # ================= PR: 検証 =================
+
+  # terraform plan(plan ロール)。フォーク PR では OIDC ロールを引けないためスキップ。
   plan:
-    if: github.event_name == 'pull_request'
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (needs.changes.outputs.terraform == 'true' || needs.changes.outputs.workflow == 'true')
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,24 +97,203 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform plan -no-color -input=false
 
-  apply:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  # Python API: コンテナ build(push なし) + pytest。
+  build-api:
+    if: >-
+      github.event_name == 'pull_request' &&
+      (needs.changes.outputs.api == 'true' || needs.changes.outputs.workflow == 'true')
+    needs: changes
     runs-on: ubuntu-latest
-    # GitHub Environments の承認フローで apply を保護する(要設定)
-    environment: production
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dev deps
+        working-directory: apps/api
+        run: pip install -r requirements-dev.txt
+      - name: Run pytest
+        working-directory: apps/api
+        run: pytest
+      - name: Build container (no push)
+        run: docker build -t code-narrative-api:ci apps/api
+
+  # Go Worker: コンテナ build(push なし) + go test。
+  build-worker:
+    if: >-
+      github.event_name == 'pull_request' &&
+      (needs.changes.outputs.worker == 'true' || needs.changes.outputs.workflow == 'true')
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: apps/lambda-worker/go.sum
+      - name: Run go test
+        working-directory: apps/lambda-worker
+        run: go test ./...
+      - name: Build container (no push)
+        run: DOCKER_BUILDKIT=1 docker build -t code-narrative-worker:ci apps/lambda-worker
+
+  # Frontend: build + lint。frontend アプリ実装(Phase 3 / T4)が入るまではガードして空振りさせる。
+  build-frontend:
+    if: >-
+      github.event_name == 'pull_request' &&
+      (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.workflow == 'true')
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build & lint (guarded until frontend app exists)
+        working-directory: apps/frontend
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+            npm run lint --if-present
+            npm run build --if-present
+          else
+            echo "apps/frontend/package.json が未実装(Phase 3/T4)。build/lint をスキップ。"
+          fi
+
+  # ================= main: デプロイ =================
+  #
+  # 鶏卵回避のため単一ジョブで順序実行する:
+  #   ECR 先行 apply → build/push → 全体 apply → Lambda コード更新 → frontend 配信
+  # apply/ECR push は同一の apply ロール(sub=:environment:production)を用いるため、
+  # すべて environment: production のこのジョブ内で完結させる(sub を一定に保つ)。
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: changes
+    runs-on: ubuntu-latest
+    environment: production # 必須レビュアー承認 + main 限定の保護ゲート(維持必須)
+    steps:
+      - uses: actions/checkout@v4
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
       - uses: hashicorp/setup-terraform@v3
+
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           terraform init \
             -backend-config="bucket=${{ vars.TFSTATE_BUCKET }}" \
             -backend-config="region=${{ env.AWS_REGION }}"
-      - name: Terraform Apply
+
+      # 1) ECR を先行作成(Lambda が参照するイメージの push 先を用意)。
+      - name: Terraform Apply (ECR only)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform apply -auto-approve -input=false \
+            -target=module.ecr_api \
+            -target=module.ecr_worker \
+            -target=module.ecr_stats
+
+      # 2) ECR リポジトリ URL を取得。
+      - name: Resolve ECR repository URLs
+        id: ecr
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          {
+            echo "api=$(terraform output -raw ecr_api_repository_url)"
+            echo "worker=$(terraform output -raw ecr_worker_repository_url)"
+            echo "stats=$(terraform output -raw ecr_stats_repository_url)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 3) イメージ build → ECR push(:latest と :SHA を併用)。
+      - name: Build & push API image
+        run: |
+          docker build -t "${{ steps.ecr.outputs.api }}:latest" \
+                       -t "${{ steps.ecr.outputs.api }}:${GITHUB_SHA}" apps/api
+          docker push "${{ steps.ecr.outputs.api }}:latest"
+          docker push "${{ steps.ecr.outputs.api }}:${GITHUB_SHA}"
+
+      - name: Build & push Worker image
+        run: |
+          DOCKER_BUILDKIT=1 docker build -t "${{ steps.ecr.outputs.worker }}:latest" \
+                       -t "${{ steps.ecr.outputs.worker }}:${GITHUB_SHA}" apps/lambda-worker
+          docker push "${{ steps.ecr.outputs.worker }}:latest"
+          docker push "${{ steps.ecr.outputs.worker }}:${GITHUB_SHA}"
+
+      # 集計 Lambda のイメージは別タスクで実装予定(apps/lambda-stats 未実装)。
+      # Dockerfile が入り次第このステップが自動で有効化される。
+      - name: Build & push Stats image (guarded)
+        run: |
+          if [ -f apps/lambda-stats/Dockerfile ]; then
+            docker build -t "${{ steps.ecr.outputs.stats }}:latest" \
+                         -t "${{ steps.ecr.outputs.stats }}:${GITHUB_SHA}" apps/lambda-stats
+            docker push "${{ steps.ecr.outputs.stats }}:latest"
+            docker push "${{ steps.ecr.outputs.stats }}:${GITHUB_SHA}"
+          else
+            echo "apps/lambda-stats/Dockerfile 未実装。stats イメージの push をスキップ。"
+          fi
+
+      # 4) 全体 apply(Lambda がイメージを参照して作成/更新される)。
+      #    ※ stats Lambda は stats イメージが ECR に存在するまで作成に失敗する(下記報告参照)。
+      - name: Terraform Apply (full)
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -auto-approve -input=false
+
+      # 5) Lambda 関数コードを push 済みイメージ(:SHA)へ更新し確実にロールアウト。
+      - name: Update Lambda function code
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          API_FN="$(terraform output -raw api_function_name)"
+          WORKER_FN="$(terraform output -raw worker_function_name)"
+          aws lambda update-function-code \
+            --function-name "$API_FN" \
+            --image-uri "${{ steps.ecr.outputs.api }}:${GITHUB_SHA}" >/dev/null
+          aws lambda update-function-code \
+            --function-name "$WORKER_FN" \
+            --image-uri "${{ steps.ecr.outputs.worker }}:${GITHUB_SHA}" >/dev/null
+          if [ -f ../../../apps/lambda-stats/Dockerfile ]; then
+            STATS_FN="$(terraform output -raw stats_function_name)"
+            aws lambda update-function-code \
+              --function-name "$STATS_FN" \
+              --image-uri "${{ steps.ecr.outputs.stats }}:${GITHUB_SHA}" >/dev/null
+          fi
+
+      # 6) Frontend: outputs から config.json 生成 → dist を s3 sync → CloudFront invalidation。
+      - name: Build frontend (guarded until app exists)
+        run: |
+          if [ -f apps/frontend/package.json ]; then
+            (cd apps/frontend && npm ci && npm run build --if-present)
+          else
+            echo "apps/frontend/package.json 未実装(Phase 3/T4)。frontend build をスキップ。"
+          fi
+
+      - name: Generate frontend config.json
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          mkdir -p ../../../apps/frontend/dist
+          API_ENDPOINT="$(terraform output -raw api_endpoint)"
+          USER_POOL_ID="$(terraform output -raw cognito_user_pool_id)"
+          CLIENT_ID="$(terraform output -raw cognito_client_id)"
+          HOSTED_UI_DOMAIN="$(terraform output -raw cognito_hosted_ui_domain)"
+          jq -n \
+            --arg apiEndpoint "$API_ENDPOINT" \
+            --arg userPoolId "$USER_POOL_ID" \
+            --arg clientId "$CLIENT_ID" \
+            --arg hostedUiDomain "$HOSTED_UI_DOMAIN" \
+            --arg region "${AWS_REGION}" \
+            '{apiEndpoint:$apiEndpoint, cognitoUserPoolId:$userPoolId, cognitoClientId:$clientId, cognitoHostedUiDomain:$hostedUiDomain, region:$region}' \
+            > ../../../apps/frontend/dist/config.json
+          echo "生成した config.json:"; cat ../../../apps/frontend/dist/config.json
+
+      - name: Deploy frontend (s3 sync + CloudFront invalidation)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          BUCKET="$(terraform output -raw frontend_bucket_name)"
+          DIST_ID="$(terraform output -raw cloudfront_distribution_id)"
+          aws s3 sync ../../../apps/frontend/dist "s3://${BUCKET}" --delete
+          aws cloudfront create-invalidation \
+            --distribution-id "$DIST_ID" \
+            --paths "/*" >/dev/null
