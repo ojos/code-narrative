@@ -20,6 +20,17 @@ const POLL_MAX_ATTEMPTS = 100;
 const HISTORY_LIMIT = 20;
 
 /**
+ * 現在アクティブに監視しているジョブ ID。
+ *
+ * 履歴の連続クリックや新規投入で切り替わる。`pollUntilDone` は待機明けに本値と
+ * 自分の jobId を照合し、非アクティブになったポーリングを即中断して #result-area の
+ * 競合更新（画面の明滅・不要な API 継続）を防ぐ。
+ *
+ * @type {string|null}
+ */
+let activeJobId = null;
+
+/**
  * ジョブが終端状態に達したかを判定する。
  *
  * @param {string} status - ジョブのステータス。
@@ -193,6 +204,9 @@ async function submitConversion(api) {
  */
 async function pollUntilDone(api, jobId) {
   const resultArea = ui.byId("result-area");
+  // このポーリングを唯一のアクティブ監視として登録する。以降に別ジョブが選択されると
+  // activeJobId が変わり、本ループは待機明けの照合で中断される。
+  activeJobId = jobId;
 
   for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt += 1) {
     let job;
@@ -200,7 +214,15 @@ async function pollUntilDone(api, jobId) {
       job = await api.getNarrative(jobId);
     } catch (error) {
       console.error("結果取得に失敗しました。", error);
+      if (jobId !== activeJobId) {
+        return;
+      }
       ui.renderResult(resultArea, { job_id: jobId, status: "failed", error_message: "結果取得に失敗しました。" });
+      return;
+    }
+
+    // API 応答待ちの間に別ジョブへ切り替わっていたら、描画も継続もせず中断する。
+    if (jobId !== activeJobId) {
       return;
     }
 
@@ -209,8 +231,16 @@ async function pollUntilDone(api, jobId) {
       return;
     }
     await delay(POLL_INTERVAL_MS);
+
+    // 待機中に別ジョブへ切り替わっていたら中断する。
+    if (jobId !== activeJobId) {
+      return;
+    }
   }
 
+  if (jobId !== activeJobId) {
+    return;
+  }
   ui.renderResult(resultArea, {
     job_id: jobId,
     status: "failed",

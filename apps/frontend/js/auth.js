@@ -109,31 +109,34 @@ export class AuthClient {
     const returnedState = url.searchParams.get("state");
     const errorParam = url.searchParams.get("error");
 
-    if (errorParam !== null) {
-      this.#clearPkceParams();
-      throw new Error(`認可サーバーがエラーを返しました: ${errorParam}`);
-    }
-
-    if (code === null) {
+    // 認可コードもエラーも無い通常表示では、URL を触らず何もしない。
+    if (errorParam === null && code === null) {
       return false;
     }
 
-    const expectedState = this.storage.getItem(STORAGE_KEYS.state);
-    const codeVerifier = this.storage.getItem(STORAGE_KEYS.codeVerifier);
+    // ここに到達した時点でコールバック。成否に関わらず PKCE 一時値を破棄し、
+    // アドレスバー/履歴から code・state を除去する（機密の残留・再送を防ぐ）。
+    try {
+      if (errorParam !== null) {
+        throw new Error(`認可サーバーがエラーを返しました: ${errorParam}`);
+      }
 
-    if (expectedState === null || returnedState !== expectedState) {
-      this.#clearPkceParams();
-      throw new Error("state が一致しません。認証をやり直してください。");
-    }
-    if (codeVerifier === null) {
-      this.#clearPkceParams();
-      throw new Error("PKCE code_verifier が見つかりません。認証をやり直してください。");
-    }
+      const expectedState = this.storage.getItem(STORAGE_KEYS.state);
+      const codeVerifier = this.storage.getItem(STORAGE_KEYS.codeVerifier);
 
-    await this.#exchangeCodeForTokens(code, codeVerifier);
-    this.#clearPkceParams();
-    this.#stripCallbackQuery(url);
-    return true;
+      if (expectedState === null || returnedState !== expectedState) {
+        throw new Error("state が一致しません。認証をやり直してください。");
+      }
+      if (codeVerifier === null) {
+        throw new Error("PKCE code_verifier が見つかりません。認証をやり直してください。");
+      }
+
+      await this.#exchangeCodeForTokens(code, codeVerifier);
+      return true;
+    } finally {
+      this.#clearPkceParams();
+      this.#stripCallbackQuery(url);
+    }
   }
 
   /**
@@ -285,7 +288,8 @@ export class AuthClient {
    */
   #stripCallbackQuery(url) {
     if (typeof globalThis.history?.replaceState === "function") {
-      globalThis.history.replaceState({}, document.title, url.pathname);
+      const title = globalThis.document?.title ?? "";
+      globalThis.history.replaceState({}, title, url.pathname);
     }
   }
 }
