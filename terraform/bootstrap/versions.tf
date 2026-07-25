@@ -13,8 +13,10 @@ terraform {
     }
   }
 
-  # 初回はローカル state。apply 後に自身が作成したバケットへ移行する(README 参照)。
-  # backend "s3" {}
+  # 初回はローカル state で apply → 自身が作成したバケットへ移行済み(README 参照)。
+  # 新規アカウントでゼロから作る場合のみ、初回 apply 時はこの backend ブロックを
+  # 一時的にコメントアウトしてローカル state で実行すること。
+  backend "s3" {}
 }
 
 provider "aws" {
