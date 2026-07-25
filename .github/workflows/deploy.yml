@@ -261,7 +261,10 @@ jobs:
               --image-uri "${{ steps.ecr.outputs.stats }}:${GITHUB_SHA}" >/dev/null
           fi
 
-      # 6) Frontend: outputs から config.json 生成 → dist を s3 sync → CloudFront invalidation。
+      # 6) Frontend: outputs から config.js 生成 → dist を s3 sync → CloudFront invalidation。
+      #    T4 の契約: config.js(非モジュール script)が window.APP_CONFIG を設定し、
+      #    index.html が config.js → js/app.js の順で読み込む。ビルドが雛形の config.js を
+      #    置く場合があるため、sync 前に本番値で必ず上書きする。
       - name: Build frontend (guarded until app exists)
         run: |
           if [ -f apps/frontend/package.json ]; then
@@ -270,7 +273,7 @@ jobs:
             echo "apps/frontend/package.json 未実装(Phase 3/T4)。frontend build をスキップ。"
           fi
 
-      - name: Generate frontend config.json
+      - name: Generate frontend config.js (window.APP_CONFIG)
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           mkdir -p ../../../apps/frontend/dist
@@ -278,22 +281,30 @@ jobs:
           USER_POOL_ID="$(terraform output -raw cognito_user_pool_id)"
           CLIENT_ID="$(terraform output -raw cognito_client_id)"
           HOSTED_UI_DOMAIN="$(terraform output -raw cognito_hosted_ui_domain)"
-          jq -n \
+          # JSON リテラルを jq で安全に生成し、window.APP_CONFIG へ代入する形に整形。
+          CONFIG_JSON="$(jq -n \
             --arg apiEndpoint "$API_ENDPOINT" \
+            --arg region "${AWS_REGION}" \
             --arg userPoolId "$USER_POOL_ID" \
             --arg clientId "$CLIENT_ID" \
             --arg hostedUiDomain "$HOSTED_UI_DOMAIN" \
-            --arg region "${AWS_REGION}" \
-            '{apiEndpoint:$apiEndpoint, cognitoUserPoolId:$userPoolId, cognitoClientId:$clientId, cognitoHostedUiDomain:$hostedUiDomain, region:$region}' \
-            > ../../../apps/frontend/dist/config.json
-          echo "生成した config.json:"; cat ../../../apps/frontend/dist/config.json
+            --arg redirectUri "https://code-narrative.ojos.jp/callback" \
+            --arg logoutUri "https://code-narrative.ojos.jp/" \
+            '{apiEndpoint:$apiEndpoint, region:$region, cognitoUserPoolId:$userPoolId, cognitoClientId:$clientId, cognitoHostedUiDomain:$hostedUiDomain, redirectUri:$redirectUri, logoutUri:$logoutUri}')"
+          printf 'window.APP_CONFIG = %s;\n' "$CONFIG_JSON" > ../../../apps/frontend/dist/config.js
+          echo "生成した config.js:"; cat ../../../apps/frontend/dist/config.js
 
       - name: Deploy frontend (s3 sync + CloudFront invalidation)
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           BUCKET="$(terraform output -raw frontend_bucket_name)"
           DIST_ID="$(terraform output -raw cloudfront_distribution_id)"
+          # 静的資材を同期(config.js も含めて配信)。
           aws s3 sync ../../../apps/frontend/dist "s3://${BUCKET}" --delete
+          # config.js は設定注入ファイルのため、キャッシュさせず即時反映されるよう個別に上書き。
+          aws s3 cp ../../../apps/frontend/dist/config.js "s3://${BUCKET}/config.js" \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --content-type "application/javascript"
           aws cloudfront create-invalidation \
             --distribution-id "$DIST_ID" \
             --paths "/*" >/dev/null
