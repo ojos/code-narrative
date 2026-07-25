@@ -24,6 +24,10 @@ func TestParseRepoURL(t *testing.T) {
 		{"http不可", "http://github.com/ojos/repo", "", "", true},
 		{"セグメント過多", "https://github.com/ojos/repo/tree/main", "", "", true},
 		{"セグメント不足", "https://github.com/ojos", "", "", true},
+		{"owner に許容外文字", "https://github.com/oj%2Fos/repo", "", "", true},
+		{"repo に許容外文字", "https://github.com/ojos/re%20po", "", "", true},
+		{"repo が親ディレクトリ参照", "https://github.com/ojos/..", "", "", true},
+		{"許容記号は通す", "https://github.com/o-j.o_s/re-po.name_1", "o-j.o_s", "re-po.name_1", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

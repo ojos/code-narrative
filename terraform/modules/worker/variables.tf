@@ -53,14 +53,8 @@ variable "dynamodb_gsi_arn" {
 }
 
 variable "bedrock_model_ids" {
-  description = "許可モデルホワイトリスト。us. プレフィックスはクロスリージョン推論プロファイルとして扱う"
+  description = "許可モデルホワイトリスト。地理プレフィックス(us./eu./apac./jp.)付きはクロスリージョン推論プロファイルとして扱う"
   type        = list(string)
-}
-
-variable "bedrock_region" {
-  description = "Bedrock 呼び出しリージョン。クロスリージョン推論(us-)前提で us-east-1 を既定とする"
-  type        = string
-  default     = "us-east-1"
 }
 
 variable "batch_size" {

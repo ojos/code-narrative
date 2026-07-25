@@ -21,7 +21,6 @@ resource "aws_lambda_function" "this" {
     variables = merge({
       DYNAMODB_TABLE  = var.dynamodb_table_name
       MODEL_WHITELIST = join(",", var.bedrock_model_ids)
-      BEDROCK_REGION  = var.bedrock_region
     }, var.extra_environment)
   }
 
