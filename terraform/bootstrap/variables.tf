@@ -16,6 +16,18 @@ variable "github_repo" {
   default     = "code-narrative"
 }
 
+variable "github_owner_id" {
+  description = "GitHub owner の不変数値ID(immutable OIDC subject 用)。`gh api /users/<owner> --jq .id` で取得"
+  type        = string
+  default     = "76836"
+}
+
+variable "github_repo_id" {
+  description = "GitHub リポジトリの不変数値ID(immutable OIDC subject 用)。`gh api /repos/<owner>/<repo> --jq .id` で取得"
+  type        = string
+  default     = "1310648907"
+}
+
 variable "tfstate_bucket_name" {
   description = "Terraform state 用 S3 バケット名(グローバル一意)。空の場合はアカウントIDを付与して自動命名"
   type        = string
