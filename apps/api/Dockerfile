@@ -7,7 +7,8 @@
 FROM public.ecr.aws/lambda/python:3.12 AS builder
 
 # uv 本体を builder にのみ配置（実行イメージには持ち込まない）
-COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /bin/uv
+# タグ再発行/差し替えでビルド成果物が変わらないよう digest で固定（可読性のためタグも併記）。
+COPY --from=ghcr.io/astral-sh/uv:0.11.32@sha256:df4cae8f3a96d175e2e5f992e597550000edbe78fdc2594d5cd8de1a217f504c /uv /bin/uv
 
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1
