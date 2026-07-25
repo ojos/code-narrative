@@ -137,12 +137,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # apps/api は uv 管理(pyproject.toml + uv.lock)。requirements-dev.txt は
+      # uv 移行時に廃止済みのため、lock を唯一の真実として dev 依存を同期する。
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.32"
       - name: Install dev deps
         working-directory: apps/api
-        run: pip install -r requirements-dev.txt
+        run: uv sync --frozen
       - name: Run pytest
         working-directory: apps/api
-        run: pytest
+        run: uv run --frozen pytest
       - name: Build container (no push)
         run: docker build -t code-narrative-api:ci apps/api
 
