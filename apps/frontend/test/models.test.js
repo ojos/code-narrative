@@ -1,19 +1,23 @@
 /**
- * @file models.js の単体テスト。ホワイトリストが SPEC の 3 件で構成されることを保証する。
+ * @file models.js の単体テスト。ホワイトリストが SPEC の 2 件で構成されることを保証する。
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ALLOWED_MODELS, PROMPT_PRESETS, isAllowedModel } from "../js/models.js";
 
-test("ホワイトリストは SPEC の 3 モデル", () => {
-  assert.equal(ALLOWED_MODELS.length, 3);
+test("ホワイトリストは東京提供の SPEC 2 モデル", () => {
+  assert.equal(ALLOWED_MODELS.length, 2);
   const ids = ALLOWED_MODELS.map((m) => m.id);
   assert.deepEqual(ids, [
-    "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
     "amazon.nova-lite-v1:0",
-    "us.meta.llama3-3-70b-instruct-v1:0",
   ]);
+});
+
+test("東京で無効な旧 ID(us. / Llama)は拒否する", () => {
+  assert.equal(isAllowedModel("us.anthropic.claude-sonnet-4-5-20250929-v1:0"), false);
+  assert.equal(isAllowedModel("us.meta.llama3-3-70b-instruct-v1:0"), false);
 });
 
 test("isAllowedModel は許可 ID を受理する", () => {

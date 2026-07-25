@@ -5,22 +5,25 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  # us. プレフィックス付きはクロスリージョン推論プロファイル、それ以外は
-  # Foundation Model を直接指定するモデルとして扱う。
-  inference_profile_ids = [for m in var.bedrock_model_ids : m if startswith(m, "us.")]
-  direct_model_ids      = [for m in var.bedrock_model_ids : m if !startswith(m, "us.")]
+  # 地理スコープのプレフィックス(us./eu./apac./jp.)付きは推論プロファイル、
+  # それ以外は Foundation Model を直接指定するモデルとして扱う。東京(ap-northeast-1)
+  # では Claude は jp. プロファイルを用いるため、us. 決め打ちにせず汎用判定する。
+  geo_prefix_pattern = "^(us|eu|apac|jp)\\."
 
-  # 推論プロファイル ARN(アカウント配下。リージョンは us- 系を跨ぐため * で許容しつつ
+  inference_profile_ids = [for m in var.bedrock_model_ids : m if length(regexall(local.geo_prefix_pattern, m)) > 0]
+  direct_model_ids      = [for m in var.bedrock_model_ids : m if length(regexall(local.geo_prefix_pattern, m)) == 0]
+
+  # 推論プロファイル ARN(アカウント配下。リージョンは跨ぎ得るため * で許容しつつ
   # モデル ID で限定)。
   inference_profile_arns = [
     for m in local.inference_profile_ids :
     "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/${m}"
   ]
 
-  # 推論プロファイルが実際にルーティングする Foundation Model の ARN(us. を除いた ID)。
+  # 推論プロファイルが実際にルーティングする Foundation Model の ARN(地理プレフィックスを除いた ID)。
   inference_fm_arns = [
     for m in local.inference_profile_ids :
-    "arn:aws:bedrock:*::foundation-model/${trimprefix(m, "us.")}"
+    "arn:aws:bedrock:*::foundation-model/${replace(m, "/${local.geo_prefix_pattern}/", "")}"
   ]
 
   # 直接指定モデルの Foundation Model ARN。
