@@ -39,11 +39,13 @@ Lambda はコンテナイメージ（ECR）を参照するが、初回 apply 時
 各 Lambda モジュールは `lifecycle { ignore_changes = [image_uri] }` を持ち、この out-of-band 更新を
 ドリフトとして検知しない（インフラ管理とコードデプロイの責務分離）。
 
-> 集計 Lambda（`analytics`）のアプリ本体は別タスクで実装・push する前提。本スタックは
-> インフラ（関数・ロール・状態機械・スケジュール）のみを構築する。
-> `apps/lambda-stats` 未実装のため既定では **`enable_analytics=false`** とし、stats ECR /
-> Lambda / Step Functions / Scheduler を作らない（イメージ無しでも全体 apply が成功）。
-> stats アプリ実装後に `-var="enable_analytics=true"` で有効化する。
+> 集計 Lambda（`analytics`）のアプリ本体 `apps/lambda-stats` は実装済み（#21）のため、
+> 既定で **`enable_analytics=true`**。stats ECR / Lambda / Step Functions / Scheduler を
+> 構築する。停止したい場合は `-var="enable_analytics=false"` で無効化できる。
+>
+> なお ECR 先行作成 → image push → apply の順序は api / worker と同じ。stats Lambda は
+> イメージが ECR に存在するまで作成に失敗するため、CI は `ecr_stats` を先に target apply し、
+> イメージを push してから全体 apply する。
 
 ## 適用順序
 

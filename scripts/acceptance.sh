@@ -57,6 +57,19 @@ else
   echo "[acceptance] (apps/lambda-worker) skip: go.mod not found"
 fi
 
+# --- apps/lambda-stats (Go / 集計バッチ) ---
+if [[ -f apps/lambda-stats/go.mod ]]; then
+  command -v go >/dev/null 2>&1 || {
+    echo "[acceptance] go not found. install Go toolchain to run apps/lambda-stats tests." >&2
+    exit 1
+  }
+  echo "[acceptance] (apps/lambda-stats) go test ./..."
+  ( cd apps/lambda-stats && go test ./... )
+  ran_any=1
+else
+  echo "[acceptance] (apps/lambda-stats) skip: go.mod not found"
+fi
+
 # --- apps/frontend (未実装) ---
 if [[ -f apps/frontend/package.json ]]; then
   command -v npm >/dev/null 2>&1 || {
