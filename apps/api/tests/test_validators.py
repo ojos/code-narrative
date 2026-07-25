@@ -46,14 +46,38 @@ def test_validate_repo_url_rejects_invalid(url: str) -> None:
         validate_repo_url(url)
 
 
-def test_validate_model_id_accepts_whitelisted() -> None:
-    """ホワイトリスト内の model_id は例外を送出しない。"""
+# terraform の MODEL_WHITELIST（東京 2 モデル）相当の許可集合。
+_ALLOWED = frozenset(
+    {
+        "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "amazon.nova-lite-v1:0",
+    }
+)
 
-    validate_model_id("amazon.nova-lite-v1:0")
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "amazon.nova-lite-v1:0",
+    ],
+)
+def test_validate_model_id_accepts_whitelisted(model_id: str) -> None:
+    """許可集合内の model_id は例外を送出しない。"""
+
+    validate_model_id(model_id, _ALLOWED)  # 例外が出ないことを確認
 
 
-def test_validate_model_id_rejects_unknown() -> None:
-    """ホワイトリスト外の model_id は ValidationError を送出する。"""
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "gpt-4o",
+        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # 旧 us. リージョン
+        "us.meta.llama3-3-70b-instruct-v1:0",  # 旧 Llama
+    ],
+)
+def test_validate_model_id_rejects_unknown(model_id: str) -> None:
+    """許可集合外の model_id は ValidationError を送出する。"""
 
     with pytest.raises(ValidationError):
-        validate_model_id("gpt-4o")
+        validate_model_id(model_id, _ALLOWED)

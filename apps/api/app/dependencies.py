@@ -83,15 +83,17 @@ def get_queue_service(
 def get_narrative_service(
     repository: NarrativeRepository = Depends(get_repository),
     queue: QueueService = Depends(get_queue_service),
+    settings: Settings = Depends(get_settings),
 ) -> NarrativeService:
     """変換ジョブサービスを提供する依存関係。
 
     Args:
         repository: DynamoDB リポジトリ。
         queue: SQS キューサービス。
+        settings: 実行時設定（許可モデル集合の供給元）。
 
     Returns:
         構築済み :class:`NarrativeService`。
     """
 
-    return NarrativeService(repository, queue)
+    return NarrativeService(repository, queue, settings.allowed_model_ids)

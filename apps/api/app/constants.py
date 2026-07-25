@@ -22,13 +22,14 @@ class JobStatus(str, Enum):
     FAILED = "failed"
 
 
-# SPEC §4 ⑤ で定義された許可モデルホワイトリスト。
+# SPEC §4 ⑤ で定義された許可モデルホワイトリストの既定値（東京リージョン）。
+# 本番では環境変数 ``MODEL_WHITELIST``（terraform 注入）を正とし、この定数は
+# 未設定/空のときのフォールバックとして用いる（config.py 参照）。
 # ここに存在しない model_id はリクエストを 400 Bad Request で拒否する。
 ALLOWED_MODEL_IDS: frozenset[str] = frozenset(
     {
-        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
         "amazon.nova-lite-v1:0",
-        "us.meta.llama3-3-70b-instruct-v1:0",
     }
 )
 

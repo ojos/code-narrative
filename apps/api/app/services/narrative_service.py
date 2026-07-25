@@ -35,20 +35,27 @@ class NarrativeService:
     Attributes:
         _repository: DynamoDB リポジトリ。
         _queue: SQS キューサービス。
+        _allowed_model_ids: model_id 検証で許可するモデル ID 集合
+            （env ``MODEL_WHITELIST`` 由来）。
     """
 
     def __init__(
-        self, repository: NarrativeRepository, queue: QueueService
+        self,
+        repository: NarrativeRepository,
+        queue: QueueService,
+        allowed_model_ids: frozenset[str],
     ) -> None:
         """サービスを初期化する。
 
         Args:
             repository: DynamoDB リポジトリ。
             queue: SQS キューサービス。
+            allowed_model_ids: 許可するモデル ID 集合（env ``MODEL_WHITELIST`` 由来）。
         """
 
         self._repository = repository
         self._queue = queue
+        self._allowed_model_ids = allowed_model_ids
 
     def create_narrative(
         self, *, user_id: str, request: CreateNarrativeRequest
@@ -72,7 +79,7 @@ class NarrativeService:
         """
 
         validate_repo_url(request.repo_url)
-        validate_model_id(request.model_id)
+        validate_model_id(request.model_id, self._allowed_model_ids)
 
         job_id = str(uuid.uuid4())
         created_at = utcnow_iso()
