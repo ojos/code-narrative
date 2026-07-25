@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>code-narrative</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <!--
+      実行時設定。実値は CI がデプロイ時に生成する（値はハードコードしない）。
+      ローカル/構造確認用のプレースホルダは config.example.js を参照。
+    -->
+    <script src="/config.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <h1 class="app-title">code-narrative</h1>
+      <div class="auth-controls">
+        <button id="login-btn" type="button" class="btn btn-primary">ログイン</button>
+        <button id="logout-btn" type="button" class="btn" hidden>ログアウト</button>
+      </div>
+    </header>
+
+    <p id="global-banner" class="banner" role="alert" hidden></p>
+
+    <main class="container">
+      <section id="view-login" class="card" hidden>
+        <h2>ようこそ</h2>
+        <p>GitHub リポジトリをショートショートに変換します。まずはログインしてください。</p>
+      </section>
+
+      <section id="view-app" hidden>
+        <section class="card">
+          <h2>リポジトリを変換</h2>
+          <form id="convert-form" novalidate>
+            <div class="field">
+              <label for="repo-url">GitHub リポジトリ URL（public のみ）</label>
+              <input
+                id="repo-url"
+                name="repo-url"
+                type="url"
+                placeholder="https://github.com/owner/repo"
+                autocomplete="off"
+                required
+              />
+            </div>
+
+            <div class="field">
+              <label for="custom-prompt">カスタムプロンプト</label>
+              <div id="preset-buttons" class="preset-buttons"></div>
+              <textarea
+                id="custom-prompt"
+                name="custom-prompt"
+                rows="3"
+                placeholder="例: サイバーパンク風のハードボイルドにして"
+              ></textarea>
+            </div>
+
+            <div class="field">
+              <label for="model-select">モデル</label>
+              <select id="model-select" name="model-select"></select>
+            </div>
+
+            <p id="form-error" class="error-text" role="alert" hidden></p>
+            <button id="submit-btn" type="submit" class="btn btn-primary">変換する</button>
+          </form>
+        </section>
+
+        <section id="result-area" class="card" hidden></section>
+
+        <section class="card">
+          <h2>変換履歴</h2>
+          <ul id="history-list" class="history-list"></ul>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>
