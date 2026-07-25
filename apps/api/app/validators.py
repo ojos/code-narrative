@@ -11,10 +11,14 @@ import re
 from .constants import ALLOWED_MODEL_IDS
 
 # https://github.com/{owner}/{repo} のみを許可する正規表現。
-# owner: 英数字とハイフン、repo: 英数字・ハイフン・アンダースコア・ドット。
+# owner: 先頭英数字 + 英数字/ハイフン（ドットを含まないため `.`/`..` にならない）。
+# repo: 英数字・ハイフン・アンダースコア・ドット。ただし `.`/`..` 等のドットのみ名は
+#       否定先読み `(?!\.+/?\Z)` で除外する（下流の codeload/commits URL のパス化け防止）。
 # 末尾スラッシュは許容するが、それ以降のパス（issues など）は許可しない。
+# 照合は :func:`re.fullmatch` で行う。末尾の `$` は Python では文字列末尾の改行の
+# 手前にもマッチしバイパスされるため、`fullmatch` + 語中アンカー `\Z` で厳密化する。
 _GITHUB_REPO_URL_PATTERN = re.compile(
-    r"^https://github\.com/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9_.-]{1,100}/?$"
+    r"https://github\.com/[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/(?!\.+/?\Z)[A-Za-z0-9_.-]{1,100}/?"
 )
 
 
@@ -48,7 +52,7 @@ def validate_repo_url(repo_url: str) -> None:
         ValidationError: 形式に一致しない場合。
     """
 
-    if not _GITHUB_REPO_URL_PATTERN.match(repo_url):
+    if not _GITHUB_REPO_URL_PATTERN.fullmatch(repo_url):
         raise ValidationError(
             "repo_url は https://github.com/{owner}/{repo} 形式のみ許可されます"
         )

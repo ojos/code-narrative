@@ -31,6 +31,12 @@ def test_validate_repo_url_accepts_valid(url: str) -> None:
         "ftp://github.com/owner/repo",
         "https://github.com//repo",  # owner 欠落
         "not-a-url",
+        "https://github.com/owner/repo\n",  # 末尾改行バイパス
+        "https://github.com/owner/repo\n.evil",  # 改行後に別内容
+        "https://github.com/owner/..",  # 親ディレクトリ参照 repo 名
+        "https://github.com/owner/.",  # カレントディレクトリ参照 repo 名
+        "https://github.com/owner/...",  # ドットのみ repo 名
+        "https://github.com/owner/../",  # 末尾スラッシュ付きでも拒否
     ],
 )
 def test_validate_repo_url_rejects_invalid(url: str) -> None:

@@ -113,9 +113,11 @@ def make_token() -> Callable[[str], str]:
         return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
     def _make(sub: str) -> str:
-        header = _b64url({"alg": "none", "typ": "JWT"})
+        # alg:none はフォールバックで拒否されるため、署名検証はしないが
+        # 実在のアルゴリズム名 + 非空の署名部を持つトークンを生成する。
+        header = _b64url({"alg": "RS256", "typ": "JWT"})
         body = _b64url({"sub": sub})
-        return f"{header}.{body}.signature"
+        return f"{header}.{body}.dummysignature"
 
     return _make
 
