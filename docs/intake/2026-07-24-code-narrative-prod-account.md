@@ -108,7 +108,7 @@ priority: high
 | **T0.5** | **OU の Control Tower 登録（整備）** | **完了**（2026-07-25） | Workloads / Prod のベースラインが有効化済み |
 | T1 | 子アカウント作成・OU 配置・Identity Center 割当 | **アカウント発行完了**（2026-07-25） | `code-narrative-prod`（`016647419566`）が Prod OU 配下でエンロール済（統制有効・CTベースライン有効）。残: ido のログイン確認と直接割当の是正 |
 | T2 | Budgets / Cost Anomaly Detection | **完了**（2026-07-25） | 月20USD(≒3,000円)。Cost Anomaly 有効。`terraform/bootstrap` apply 済 |
-| T3 | Route 53 サブドメイン委任 | 未着手 | `terraform/environments/prod/dns.tf`。親ゾーン側 NS 登録は P2 依存 |
+| T3 | Route 53 サブドメイン委任 | 未着手 | AWS 側(子ゾーン)は `terraform/environments/prod` で Terraform 管理。さくら側(親ゾーン NS 登録)は**手動**(標準さくらのDNS は Terraform 非対応) |
 | T4 | Terraform state バケット + OIDC 2ロール | **完了**（2026-07-25） | `terraform/bootstrap` apply 済・state を S3(`code-narrative-tfstate-016647419566`)へ移行済。GitHub 変数3つ登録済 |
 
 ### T0.5 詳細: OU の Control Tower 登録（整備）
@@ -148,7 +148,7 @@ Terraform 方針: T1（アカウント発行）は Control Tower Account Factory
 | # | 内容 | 状態 |
 |---|---|---|
 | P1 | `aws+code-narrative@ojos.jp` の受信検証 | **解決**（2026-07-24 テスト送信。`aws.ojos.jp` ML 経由で着信確認） |
-| P2 | `ojos.jp` の権威 DNS の管理場所と NS レコード追加権限 | 未確認（T3 の前提） |
+| P2 | `ojos.jp` の権威 DNS の管理場所と NS レコード追加権限 | **解決**（`ns1/ns2.dns.ne.jp` = 標準さくらのDNS/会員メニュー。Terraform 非対応のため委任 NS は手動登録） |
 | P3 | GitHub リポジトリ名とデプロイ対象ブランチ | **解決**（`ojos/code-narrative` / main=apply, PR=plan） |
 | P4 | 管理アカウントのルートユーザーの MFA・復旧経路 | 未確認 |
 
