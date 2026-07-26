@@ -11,6 +11,7 @@ import { ApiClient, ApiError } from "./api.js";
 import { ALLOWED_MODELS, PROMPT_PRESETS, isAllowedModel } from "./models.js";
 import { validateRepoUrl } from "./validation.js";
 import * as ui from "./ui.js";
+import * as prefs from "./preferences.js";
 
 /** 結果ポーリングの間隔（ミリ秒）。 */
 const POLL_INTERVAL_MS = 3000;
@@ -90,17 +91,43 @@ async function bootstrap() {
 /**
  * モデル選択・プリセットボタンなど、認証状態に依らない UI を配線する。
  *
+ * 併せてフォーム入力の保存・復元を配線する。復元はビューが hidden かどうかに
+ * 依存しないため、認証状態に依らないこの経路で行う。
+ *
  * @returns {void}
  */
 function wireStaticUi() {
+  const repoInput = /** @type {HTMLInputElement} */ (ui.byId("repo-url"));
+  const promptField = /** @type {HTMLTextAreaElement} */ (ui.byId("custom-prompt"));
   const modelSelect = /** @type {HTMLSelectElement} */ (ui.byId("model-select"));
+
   ui.renderModelOptions(modelSelect, ALLOWED_MODELS);
 
-  const promptField = /** @type {HTMLTextAreaElement} */ (ui.byId("custom-prompt"));
+  const saveDraft = () => {
+    prefs.save({
+      repoUrl: repoInput.value,
+      customPrompt: promptField.value,
+      modelId: modelSelect.value,
+    });
+  };
+
   ui.renderPromptPresets(ui.byId("preset-buttons"), PROMPT_PRESETS, (prompt) => {
     promptField.value = prompt;
     promptField.focus();
+    // value への直接代入では input イベントが発火しないため、明示的に保存する。
+    saveDraft();
   });
+
+  // option の生成前に select.value を代入しても無視されるため、
+  // renderModelOptions の後に復元する。
+  const draft = prefs.load();
+  repoInput.value = draft.repoUrl;
+  promptField.value = draft.customPrompt;
+  modelSelect.value = draft.modelId;
+
+  repoInput.addEventListener("input", saveDraft);
+  promptField.addEventListener("input", saveDraft);
+  modelSelect.addEventListener("change", saveDraft);
 }
 
 /**
@@ -116,7 +143,12 @@ function wireAuthControls(auth) {
       ui.showBanner(ui.byId("global-banner"), "ログインを開始できませんでした。");
     });
   });
-  ui.byId("logout-btn").addEventListener("click", () => auth.logout());
+  ui.byId("logout-btn").addEventListener("click", () => {
+    // 共用ブラウザで次の利用者に前の利用者の入力が残らないよう、
+    // Hosted UI へリダイレクトする前に保存値を破棄する。
+    prefs.clear();
+    auth.logout();
+  });
 }
 
 /**

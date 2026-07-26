@@ -21,6 +21,7 @@ apps/frontend/
 │   ├── api.js          # REST API クライアント（Bearer JWT）
 │   ├── models.js       # 許可モデルホワイトリスト / プロンプトプリセット
 │   ├── validation.js   # 入力バリデーション（GitHub URL 等）
+│   ├── preferences.js  # フォーム入力の localStorage 永続化
 │   └── ui.js           # DOM 描画（ビュー層）
 ├── scripts/
 │   ├── build.js        # dist/ を生成（依存ゼロ）
@@ -77,6 +78,33 @@ Hosted UI / authorize / token / logout の各 URL は `cognitoHostedUiDomain` �
 
 Implicit フローは使用しない。コールバック/ログアウト URL は T3 の Cognito 設定
 （`https://code-narrative.ojos.jp/callback` / `https://code-narrative.ojos.jp/`）と一致。
+
+## ブラウザ保存の使い分け
+
+キー空間を `cn.` 接頭辞で分け、寿命の異なる 2 つを混ぜない。
+
+| 用途 | 保存先 | キー | 寿命 | 実装 |
+|---|---|---|---|---|
+| フォーム入力の下書き | `localStorage` | `cn.form.draft` | ログアウトまで（タブを閉じても残る） | `js/preferences.js` |
+| 認証トークン | `sessionStorage` | `cn.auth.tokens` | タブを閉じるまで | `js/auth.js` |
+| PKCE verifier / state | `sessionStorage` | `cn.pkce.verifier` / `cn.oauth.state` | 認可コード交換まで | `js/pkce.js`, `js/auth.js` |
+
+### フォーム入力の下書き（`cn.form.draft`）
+
+リポジトリ URL・カスタムプロンプト・モデル選択の 3 値を単一キーの JSON として保持し、
+リロードや Hosted UI からのリダイレクト復帰でも同じ入力状態を復元する（`docs/SPEC.md` §4⑤）。
+
+- **保存の契機**: 3 入力の `input` / `change`、およびプリセットボタン押下時。
+  `value` への直接代入では `input` が発火しないため、プリセット側は明示的に保存する
+- **破棄の契機**: ログアウト（Hosted UI へリダイレクトする前）。共用ブラウザで次の利用者に
+  前の利用者のリポジトリ URL が残らないようにする
+- **復元時の検証**: 読み出し側で行う。ホワイトリスト外のモデル ID は既定モデルへフォールバック、
+  カスタムプロンプトは API 上限（2000 文字）で切り詰め、壊れた JSON はキーごと破棄する。
+  ホワイトリストの正本は `models.js` であり保存後に変わりうるため、書き込み時の検証では足りない
+- **`localStorage` が使えない環境**（Safari プライベートモード等で参照自体が例外になる場合）:
+  保存・復元のみを静かに無効化し、フォーム本体の動作は維持する
+- **復元の順序**: `renderModelOptions` で `option` を生成した後に `select.value` を代入する。
+  生成前の代入は無視される
 
 ## SPA ルーティングの前提
 
