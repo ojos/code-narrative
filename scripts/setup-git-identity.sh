@@ -20,7 +20,7 @@
 #   2. global に user.useConfigOnly=true を立てる
 #      → local 未設定のリポジトリでは commit が exit 128 で止まる。
 #         黙って別名義になるより、止まって気づくほうがよい。
-#   3. 当リポジトリの local へ ojos identity を適用する
+#   3. 当リポジトリの local へ .env の identity を適用する
 #   4. global の credential.helper を空 → gh に固定する (#68)
 #      → VS Code はホストの資格情報へ転送するヘルパーを /etc/gitconfig と
 #         ~/.gitconfig の両方へ注入する。実測では、打ち消していないディレクトリで
@@ -30,10 +30,14 @@
 #         gh 未ログイン時は https 操作が失敗するが、黙って別アカウントで通るより
 #         止まって気づくほうがよい。identity (3) と同じ考え方。
 #
-# github-account-switch.sh を呼ばないのは、あれが gh api user / gh auth login を
-# 伴うため。接続のたびにネットワークを叩くのは重く、オフラインやトークン未設定で
-# 失敗する。ここでは git identity だけを env から適用する。認証の切替えは
-# 引き続き github-account-switch.sh の役割。
+# identity の値はプロジェクト .env の GIT_IDENTITY_NAME / GIT_IDENTITY_EMAIL から取る。
+# git 自身が読む GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL は使えない。それらを環境へ置くと、
+# local 設定を持たないリポジトリでも identity が解決できてしまい、useConfigOnly による
+# 保護が無効になる（実測で確認済み）。git が解釈しない名前であることが必須。
+#
+# GitHub アカウントの追加・切替は gh 本体（gh auth login / logout / switch）が担う。
+# 以前は github-account-switch.sh が env のトークンから gh へログインし直していたが、
+# gh の認証状態を named volume で永続化したため不要になり、#68 で削除した。
 #
 # 使い方:
 #   bash scripts/setup-git-identity.sh            # 適用
@@ -49,12 +53,12 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$(dirname "$HERE")"
 
-# GIT_AUTHOR_*_OJOS はプロジェクト .env / devcontainer の remoteEnv 由来。
+# GIT_IDENTITY_NAME / GIT_IDENTITY_EMAIL はプロジェクト .env 由来（remoteEnv は使わない）。
 # shellcheck source=scripts/load-project-env.sh
 . "$HERE/load-project-env.sh"
 
-EXPECTED_NAME="${GIT_AUTHOR_NAME_OJOS:-}"
-EXPECTED_EMAIL="${GIT_AUTHOR_EMAIL_OJOS:-}"
+EXPECTED_NAME="${GIT_IDENTITY_NAME:-}"
+EXPECTED_EMAIL="${GIT_IDENTITY_EMAIL:-}"
 
 # git が資格情報を要求したときの唯一の供給元。gh のログイン状態に紐づくため、
 # 未ログインなら供給されず、git は黙って別経路へ落ちずに失敗する。
@@ -125,9 +129,11 @@ apply() {
   else
     # ここで落とさない。global の無害化は済んでおり、identity 未設定のまま
     # コミットしようとすれば git 自身が exit 128 で止める。
-    err "WARN: GIT_AUTHOR_NAME_OJOS / GIT_AUTHOR_EMAIL_OJOS が未設定のため local identity を適用しません。"
-    err "WARN: このリポジトリでコミットする前に次を実行してください:"
-    err "WARN:   bash $HERE/github-account-switch.sh use ojos --git-scope local"
+    err "WARN: GIT_IDENTITY_NAME / GIT_IDENTITY_EMAIL が未設定のため local identity を適用しません。"
+    err "WARN: プロジェクトの .env に次を設定してから、このスクリプトを再実行してください:"
+    err "WARN:   GIT_IDENTITY_NAME=<表示名>"
+    err "WARN:   GIT_IDENTITY_EMAIL=<メールアドレス>"
+    err "WARN: 雛形: $HERE/../.env.example"
   fi
 
   log "global identity を無効化し user.useConfigOnly=true を設定しました"
@@ -185,7 +191,7 @@ check() {
       failures=$((failures + 1))
     fi
   else
-    log "SKIP GIT_AUTHOR_EMAIL_OJOS 未設定のため local identity の検査を省略"
+    log "SKIP GIT_IDENTITY_EMAIL 未設定のため local identity の検査を省略"
   fi
 
   # 4) 当リポジトリでは identity が解決できること。
