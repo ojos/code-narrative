@@ -53,7 +53,7 @@ variable "dynamodb_gsi_arn" {
 }
 
 variable "bedrock_model_ids" {
-  description = "許可モデルホワイトリスト。地理プレフィックス(us./eu./apac./jp.)付きはクロスリージョン推論プロファイルとして扱う"
+  description = "許可モデルホワイトリスト。スコーププレフィックス(us./eu./apac./jp./global.)付きは推論プロファイルとして扱う"
   type        = list(string)
 }
 

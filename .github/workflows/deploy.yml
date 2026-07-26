@@ -75,6 +75,35 @@ jobs:
 
   # ================= PR: 検証 =================
 
+  # モジュール単体テスト(terraform test)。provider をモックするため AWS 認証は不要で、
+  # フォーク PR でも動く。plan では確認できないもの(ホワイトリストに無いモデル ID を
+  # 入力に与えたときの ARN 導出など)をここで押さえる。
+  module-test:
+    if: >-
+      github.event_name == 'pull_request' &&
+      (needs.changes.outputs.terraform == 'true' || needs.changes.outputs.workflow == 'true')
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Terraform Test (modules)
+        run: |
+          set -euo pipefail
+          # tests/ を持つモジュールだけを対象にする。
+          found=0
+          while IFS= read -r dir; do
+            found=1
+            echo "::group::terraform test ${dir}"
+            terraform -chdir="$dir" init -backend=false -input=false -no-color
+            terraform -chdir="$dir" test -no-color
+            echo "::endgroup::"
+          done < <(find terraform/modules -type d -name tests -printf '%h\n' | sort)
+          if [ "$found" -eq 0 ]; then
+            echo "no module tests found" >&2
+            exit 1
+          fi
+
   # terraform plan(plan ロール)。フォーク PR では OIDC ロールを引けないためスキップ。
   plan:
     if: >-
