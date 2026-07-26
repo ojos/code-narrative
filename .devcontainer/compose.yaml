@@ -7,7 +7,15 @@ services:
       - /var/run/docker.sock:/var/run/docker-host.sock
       - claude-storage:/home/vscode/.claude
       - gemini-storage:/home/vscode/.gemini
+      # 認証状態の永続化（#66）。これらはイメージレイヤに置くとリビルドで消え、
+      # そのたびに aws sso login / gh auth login / gcloud auth login をやり直すことになる。
+      - aws-storage:/home/vscode/.aws
+      - gcloud-storage:/home/vscode/.config/gcloud
+      - gh-storage:/home/vscode/.config/gh
     command: sleep infinity
 volumes:
   claude-storage:
   gemini-storage:
+  aws-storage:
+  gcloud-storage:
+  gh-storage:
