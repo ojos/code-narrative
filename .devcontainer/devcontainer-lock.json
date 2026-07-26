@@ -5,6 +5,11 @@
       "resolved": "ghcr.io/devcontainers-extra/features/ripgrep@sha256:0dfc0ac16f0d6aa754d006a138fd4cb4a62c245d308306edf8ad1b7a80b8fdf2",
       "integrity": "sha256:0dfc0ac16f0d6aa754d006a138fd4cb4a62c245d308306edf8ad1b7a80b8fdf2"
     },
+    "ghcr.io/devcontainers-extra/features/tmux-apt-get:1": {
+      "version": "1.0.17",
+      "resolved": "ghcr.io/devcontainers-extra/features/tmux-apt-get@sha256:7d15e519840976e86642bba9180e11cba88dd07a00209c7f589d6112d9876c89",
+      "integrity": "sha256:7d15e519840976e86642bba9180e11cba88dd07a00209c7f589d6112d9876c89"
+    },
     "ghcr.io/devcontainers/features/aws-cli:1": {
       "version": "1.1.4",
       "resolved": "ghcr.io/devcontainers/features/aws-cli@sha256:1f93c8315b7a6d76982ebb2269f8b0d50413fc0f965c032edf4aee0caceb73ef",
