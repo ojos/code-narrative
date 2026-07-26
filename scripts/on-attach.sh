@@ -67,4 +67,4 @@ reset_docker_credstore
 if command -v gh >/dev/null 2>&1; then
   gh auth status >/dev/null 2>&1 && echo "[on-attach] gh auth OK" || echo "[on-attach] WARN: gh auth missing"
 fi
-echo "[on-attach] profile list: bash scripts/github-account-switch.sh list"
+echo "[on-attach] GitHub アカウント: gh auth status / 追加は gh auth login"

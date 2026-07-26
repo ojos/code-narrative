@@ -9,8 +9,14 @@
 #       削除し、.env を単一の供給元にしている。キーが無ければ黙って代替経路へ落ちるのではなく
 #       明示的に失敗する。
 #
-#       remoteEnv には GITHUB_TOKEN_OJOS など他の変数が残るため、上書き優先の仕組み自体は
-#       引き続き必要。
+#       git identity も同じ理由で remoteEnv から外し、.env の GIT_IDENTITY_NAME /
+#       GIT_IDENTITY_EMAIL へ移した。GitHub のトークンとアカウント情報は移設ではなく
+#       廃止で、gh 本体のログイン状態（named volume で永続）に一本化している。
+#       結果として remoteEnv に残るのは LOCAL_WORKSPACE_FOLDER のみで、
+#       これは資格情報ではない。
+#
+#       上書き優先の仕組み自体は引き続き必要。ホスト OS 側に同名の変数が定義されている
+#       環境では、それを .env の値で上書きしないと供給元が二重になる。
 #
 # 使い方: 実行ではなく source して使う。
 #   . scripts/load-project-env.sh

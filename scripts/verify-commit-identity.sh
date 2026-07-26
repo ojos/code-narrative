@@ -164,7 +164,7 @@ main() {
 
   if [[ "$violations" -gt 0 ]]; then
     echo "[identity] 許可外の identity を ${violations} 件検出しました。" >&2
-    echo "[identity] 対処: bash scripts/github-account-switch.sh use ojos --git-scope local" >&2
+    echo "[identity] 対処: .env の GIT_IDENTITY_NAME / GIT_IDENTITY_EMAIL を確認し、bash scripts/setup-git-identity.sh を実行" >&2
     echo "[identity] その後、該当コミットを git rebase で author ごと作り直してください。" >&2
     echo "IDENTITY_FAIL"
     exit 1
