@@ -28,10 +28,6 @@
     "ghcr.io/devcontainers/features/terraform:1": {}
   },
   "remoteEnv": {
-    "GITHUB_TOKEN_OJOS": "${localEnv:GITHUB_TOKEN_OJOS}",
-    "GITHUB_OWNER_OJOS": "${localEnv:GITHUB_OWNER_OJOS}",
-    "GIT_AUTHOR_NAME_OJOS": "${localEnv:GIT_AUTHOR_NAME_OJOS}",
-    "GIT_AUTHOR_EMAIL_OJOS": "${localEnv:GIT_AUTHOR_EMAIL_OJOS}",
     "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
   },
   "postCreateCommand": "bash scripts/fix-mount-owner.sh && bash scripts/install-ai-tools.sh",
