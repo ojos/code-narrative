@@ -78,22 +78,33 @@ resolve_global_config() {
   printf '%s' "${GIT_CONFIG_GLOBAL:-$HOME/.gitconfig}"
 }
 
+# 失敗は必ず return 1 で返す。
+# この関数は `if ! apply` の条件文脈から呼ばれることがあり、その中では set -e が
+# 無効化される。書き込み失敗を素通りさせると最後の log の終了コード 0 が返り、
+# 「適用できていないのに成功」と報告してしまう。
 apply() {
   # --unset-all は該当キーが無いと exit 5 を返す。未設定は正常系なので握りつぶす。
   git config --global --unset-all user.name || true
   git config --global --unset-all user.email || true
-  git config --global user.useConfigOnly true
+
+  if ! git config --global user.useConfigOnly true; then
+    err "ERROR: global 設定に user.useConfigOnly を書き込めません"
+    return 1
+  fi
 
   if [[ -n "$EXPECTED_NAME" && -n "$EXPECTED_EMAIL" ]]; then
-    git config --local user.name "$EXPECTED_NAME"
-    git config --local user.email "$EXPECTED_EMAIL"
+    if ! git config --local user.name "$EXPECTED_NAME" ||
+      ! git config --local user.email "$EXPECTED_EMAIL"; then
+      err "ERROR: local 設定に identity を書き込めません"
+      return 1
+    fi
     log "local identity: $EXPECTED_NAME <$EXPECTED_EMAIL>"
   else
     # ここで落とさない。global の無害化は済んでおり、identity 未設定のまま
     # コミットしようとすれば git 自身が exit 128 で止める。
     err "WARN: GIT_AUTHOR_NAME_OJOS / GIT_AUTHOR_EMAIL_OJOS が未設定のため local identity を適用しません。"
     err "WARN: このリポジトリでコミットする前に次を実行してください:"
-    err "WARN:   bash scripts/github-account-switch.sh use ojos --git-scope local"
+    err "WARN:   bash $HERE/github-account-switch.sh use ojos --git-scope local"
   fi
 
   log "global identity を無効化し user.useConfigOnly=true を設定しました"
@@ -186,14 +197,20 @@ check() {
   if [[ "$failures" -gt 0 ]]; then
     log "SKIP 冪等性検査（先行する検査が失敗しているため。まず適用してください）"
   else
-    apply >/dev/null 2>&1 || true
-    cp "$global_config" "$TMP_SNAPSHOT" 2>/dev/null || : >"$TMP_SNAPSHOT"
-    if cmp -s "$SNAPSHOT" "$TMP_SNAPSHOT"; then
-      log "OK  冪等: 再適用で $global_config は変化しない（credential セクションを含む）"
-    else
-      err "NG  冪等性なし: 再適用で $global_config が変化した"
-      diff -u "$SNAPSHOT" "$TMP_SNAPSHOT" >&2 || true
+    # apply の失敗を握りつぶすと、何も書き換わらないので cmp が一致し、
+    # 「再適用できないのに冪等 OK」という誤った判定になる。失敗は失敗として扱う。
+    if ! apply >/dev/null 2>&1; then
+      err "NG  再適用に失敗した（apply が非ゼロ終了）"
       failures=$((failures + 1))
+    else
+      cp "$global_config" "$TMP_SNAPSHOT" 2>/dev/null || : >"$TMP_SNAPSHOT"
+      if cmp -s "$SNAPSHOT" "$TMP_SNAPSHOT"; then
+        log "OK  冪等: 再適用で $global_config は変化しない（credential セクションを含む）"
+      else
+        err "NG  冪等性なし: 再適用で $global_config が変化した"
+        diff -u "$SNAPSHOT" "$TMP_SNAPSHOT" >&2 || true
+        failures=$((failures + 1))
+      fi
     fi
   fi
 

@@ -32,7 +32,8 @@ inject_env_autoload "$HOME/.zshrc"
 # コミットしようとすれば git 自身が止めるため、ここで打ち切る理由がない。
 if ! bash "$HERE/setup-git-identity.sh"; then
   echo "[on-attach] WARN: git identity の適用に失敗しました。" >&2
-  echo "[on-attach] WARN: 手動確認: bash scripts/setup-git-identity.sh --check" >&2
+  # CWD に依存しないよう絶対パスで案内する（そのままコピペして実行できる形）。
+  echo "[on-attach] WARN: 手動確認: bash $HERE/setup-git-identity.sh --check" >&2
 fi
 
 if command -v gh >/dev/null 2>&1; then
