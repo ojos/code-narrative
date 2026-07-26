@@ -67,26 +67,58 @@
 ```text
 code-narrative/
 ├── .github/
-│   └── workflows/
-│       └── deploy.yml           # モノレポ一括 CI/CD パイプライン
+│   ├── workflows/
+│   │   ├── deploy.yml           # モノレポ一括 CI/CD パイプライン(PR: plan / main: apply)
+│   │   ├── identity-guard.yml   # コミット identity の検証ゲート
+│   │   └── copilot-review.yml   # リモート最終レビューゲート
+│   └── project-ai-rules.md      # プロジェクト共通の AI 運用ルール
 ├── apps/
-│   ├── api/                    # REST API (Python / FastAPI + Mangum / Lambda コンテナ)
+│   ├── api/                     # REST API (Python / FastAPI + Mangum / Lambda コンテナ)
 │   │   ├── app/
+│   │   │   ├── routers/         # エンドポイント定義
+│   │   │   ├── services/        # ジョブ投入・SQS エンキュー
+│   │   │   ├── repositories/    # DynamoDB アクセス
+│   │   │   └── utils/
+│   │   ├── tests/               # pytest
 │   │   ├── Dockerfile
-│   │   └── requirements.txt
-│   ├── lambda-worker/          # SQS Worker (Go / Amazon Bedrock SDK)
+│   │   └── pyproject.toml       # 依存は uv 管理(uv.lock を唯一の真実とする)
+│   ├── lambda-worker/           # SQS Worker (Go / Amazon Bedrock SDK)
 │   │   ├── main.go
+│   │   ├── internal/
+│   │   │   ├── worker/          # ハンドラ(冪等性・部分バッチ失敗応答)
+│   │   │   ├── ghclient/        # tarball / コミット履歴の取得
+│   │   │   ├── extract/         # 物語素材の抽出(ツリー・主要ファイル選定)
+│   │   │   ├── bedrock/         # Converse API 呼び出し・モデルホワイトリスト
+│   │   │   └── store/           # DynamoDB アクセス
 │   │   ├── Dockerfile
 │   │   └── go.mod
-│   └── frontend/               # 管理画面 (CloudFront + S3 静的Web)
-│       └── index.html          # Cognito SDK + UI (リポジトリ指定 / モデル選択 / 変換実行)
+│   ├── lambda-stats/            # 集計バッチ (Go / Step Functions タスク)
+│   │   ├── main.go
+│   │   ├── internal/
+│   │   │   ├── stats/           # 集計ロジック(モデル別利用・プロンプト傾向・トークン)
+│   │   │   └── store/           # Scan / STATS# レコード書き込み
+│   │   ├── Dockerfile
+│   │   └── go.mod
+│   └── frontend/                # 管理画面 (CloudFront + S3 静的Web)
+│       ├── index.html           # 画面骨格(config.js → js/app.js の順に読み込む)
+│       ├── styles.css
+│       ├── config.example.js    # 実行時設定の雛形(実値はコミットしない)
+│       ├── js/                  # app / auth / pkce / api / models / validation / ui
+│       ├── scripts/             # build.js(dist 生成) / check.js(構文チェック)
+│       ├── test/                # node:test
+│       └── package.json
 ├── docs/
-│   └── SPEC.md                 # 本仕様書
-└── terraform/                  # IaC (Terraform)
-    ├── main.tf
-    ├── variables.tf
-    ├── outputs.tf
-    └── modules/
+│   ├── SPEC.md                  # 本仕様書
+│   ├── intake/                  # intake 記録
+│   └── worklog/                 # 作業ログ
+├── scripts/                     # 受け入れ検証(verify/acceptance)・レビューゲート・環境構築
+├── .ai-playbook/                # AI エージェント運用の規範
+└── terraform/                   # IaC (Terraform)
+    ├── bootstrap/               # 子アカウント初期構築(state 基盤・OIDC・コスト統制)。手適用
+    ├── environments/
+    │   └── prod/                # アプリ基盤一式(S3 バックエンド)。CI/CD から適用
+    └── modules/                 # ecr / dynamodb / sqs / cognito / api / worker /
+                                 # frontend / analytics(1 モジュール 1 責務)
 ```
 
 ---
