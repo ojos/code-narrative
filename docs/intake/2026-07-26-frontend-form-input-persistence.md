@@ -2,8 +2,8 @@
 
 - 起票日: 2026-07-26
 - 起票者ロール: intake-manager
-- ステータス: **起票済み**（GitHub issue #72）
-- 起票先: [ojos/code-narrative#72](https://github.com/ojos/code-narrative/issues/72)
+- ステータス: **完了**（2026-07-26。PR #73 を squash merge / main `9f2eb79`。acceptance 参照）
+- 起票先: [ojos/code-narrative#72](https://github.com/ojos/code-narrative/issues/72)（`completed` でクローズ）
 
 ## intake 判定
 
@@ -90,13 +90,13 @@ priority: medium
 
 ## 実施タスク順序
 
-| # | タスク | 依存 | 並列可 |
-|---|---|---|---|
-| T1 | `js/preferences.js` を追加（Storage 注入・検証つき load/save/clear） | — | — |
-| T2 | `js/app.js` へ復元・保存・ログアウト時破棄を配線 | T1 | T3 と並列可 |
-| T3 | `test/preferences.test.js` を追加（acceptance の 7 ケース） | T1 | T2 と並列可 |
-| T4 | `docs/SPEC.md` §5 と `apps/frontend/README.md` を追記 | — | T1〜T3 と並列可 |
-| T5 | `npm run verify` で受け入れ検証、ローカル二段ゲート通過後に PR | T2, T3, T4 | — |
+| # | タスク | 依存 | 並列可 | 結果 |
+|---|---|---|---|---|
+| T1 | `js/preferences.js` を追加（Storage 注入・検証つき load/save/clear） | — | — | 完了 |
+| T2 | `js/app.js` へ復元・保存・ログアウト時破棄を配線 | T1 | T3 と並列可 | 完了 |
+| T3 | `test/preferences.test.js` を追加（acceptance の 7 ケース） | T1 | T2 と並列可 | 完了（8 ケースへ増）|
+| T4 | `docs/SPEC.md` §5 と `apps/frontend/README.md` を追記 | — | T1〜T3 と並列可 | 完了（SPEC は §4⑤）|
+| T5 | `npm run verify` で受け入れ検証、ローカル二段ゲート通過後に PR | T2, T3, T4 | — | 完了（PR #73）|
 
 ## 着手前の事前条件
 
@@ -107,6 +107,37 @@ priority: medium
 - **回帰**: 既存 `test/auth.test.js` が `sessionStorage` を使う。`preferences.js` は `localStorage` を別キー空間（`cn.form.*`）で使うため衝突しない。`npm run verify` で確認する。
 - **例外安全**: `localStorage` へのアクセス自体が例外になる環境がある。`preferences.js` 内で捕捉し、フォームの初期化を止めないこと。
 - **XSS**: 復元値は `value` プロパティへ代入するのみで `innerHTML` を経由しない（`ui.js` の方針を踏襲）。
+
+## 完了記録（2026-07-26）
+
+### acceptance の充足
+
+**機械検証** — `scripts/loop-gate.sh` → `GATE_PASS`
+
+- step 1 `verify`: `VERIFY_PASS`（api 55 passed / lambda-worker・lambda-stats `go test` ok / frontend 35 tests 0 fail）
+- step 2 第二意見: `[gemini-review] reviewing staged` → `LGTM`
+- CI: `build-frontend` / `changes` / `verify-commit-identity` すべて pass
+- Copilot レビュー: 6/6 ファイルをレビューし指摘 0 件
+
+**手動確認** — 実 Chromium で `apps/frontend` を起動して駆動（12 チェック全 PASS）
+
+- 3 値がリロード後に復元される。モデルは既定の Claude Sonnet 4.5 ではなく、選択した DeepSeek V3.2 が復元されることを確認
+- プリセット（太宰治風）で入れた本文もリロードを跨いで復元される
+- ログアウトで `cn.form.draft` が破棄され、再訪時に 3 欄すべて初期状態へ戻る
+
+Cognito Hosted UI は本物を叩けないため `sessionStorage` にトークンを直接置いて認証済みビューを出し、API / Cognito 宛リクエストは中断した。`localStorage` の挙動そのものは実ブラウザで検証している。
+
+### 計画からの差分
+
+| # | 差分 | 理由 |
+|---|---|---|
+| 1 | テストを 7 → 8 ケースへ増やした | 「JSON だがオブジェクトでない保存値（配列等）」を追加。`normalizeDraft` が素通りしないことを固定するため |
+| 2 | プリセットボタン押下時の保存を追加した | 計画に無かった経路。`value` への直接代入では `input` が発火せず、プリセットを選んでリロードすると値が失われる。手動確認でこの経路が効いていることを確認済み |
+| 3 | SPEC の追記先は §5 ではなく **§4⑤** | フロントエンド仕様の実際の節番号に合わせた |
+
+### 未了
+
+- 本番デプロイは未実施。`deploy` ワークフローが `production` 環境の必須レビュアー承認待ちで停止している（設計どおりのゲート）
 
 ## 関連
 
