@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # load-project-env.sh — プロジェクト固有の .env を「ホスト由来の環境変数より優先」で読み込む。
 #
-# 目的: devcontainer の remoteEnv がホスト OS の GEMINI_API_KEY をコンテナへ注入する構造
-#       （.devcontainer/devcontainer.json）は維持したまま、本プロジェクトのみ .env の値を
-#       上書き優先する。
+# 目的: プロジェクト固有の設定を .env に集約し、ホスト OS 由来の同名変数より優先させる。
+#
+#       GEMINI_API_KEY はかつて devcontainer の remoteEnv でもホストから注入していたが、
+#       ホスト側と .env で別のキーが入っており、.env を source しない文脈でだけ黙って
+#       ホスト側のキー（別アカウントのクォータ・課金）が使われていた。#68 で remoteEnv から
+#       削除し、.env を単一の供給元にしている。キーが無ければ黙って代替経路へ落ちるのではなく
+#       明示的に失敗する。
+#
+#       remoteEnv には GITHUB_TOKEN_OJOS など他の変数が残るため、上書き優先の仕組み自体は
+#       引き続き必要。
 #
 # 使い方: 実行ではなく source して使う。
 #   . scripts/load-project-env.sh

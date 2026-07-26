@@ -32,7 +32,6 @@
     "GITHUB_OWNER_OJOS": "${localEnv:GITHUB_OWNER_OJOS}",
     "GIT_AUTHOR_NAME_OJOS": "${localEnv:GIT_AUTHOR_NAME_OJOS}",
     "GIT_AUTHOR_EMAIL_OJOS": "${localEnv:GIT_AUTHOR_EMAIL_OJOS}",
-    "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
     "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
   },
   "postCreateCommand": "bash scripts/fix-mount-owner.sh && bash scripts/install-ai-tools.sh",
