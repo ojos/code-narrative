@@ -21,6 +21,14 @@
 #      → local 未設定のリポジトリでは commit が exit 128 で止まる。
 #         黙って別名義になるより、止まって気づくほうがよい。
 #   3. 当リポジトリの local へ ojos identity を適用する
+#   4. global の credential.helper を空 → gh に固定する (#68)
+#      → VS Code はホストの資格情報へ転送するヘルパーを /etc/gitconfig と
+#         ~/.gitconfig の両方へ注入する。実測では、打ち消していないディレクトリで
+#         `git credential fill` が別アカウント (bascule-aizu) の PAT を警告なく返した。
+#         空文字を 1 つ置くと git はそれまでのヘルパー一覧を破棄するため、system
+#         (/etc/gitconfig) 側の注入も無効化できる。そのうえで gh を唯一の供給元にする。
+#         gh 未ログイン時は https 操作が失敗するが、黙って別アカウントで通るより
+#         止まって気づくほうがよい。identity (3) と同じ考え方。
 #
 # github-account-switch.sh を呼ばないのは、あれが gh api user / gh auth login を
 # 伴うため。接続のたびにネットワークを叩くのは重く、オフラインやトークン未設定で
@@ -47,6 +55,10 @@ cd "$(dirname "$HERE")"
 
 EXPECTED_NAME="${GIT_AUTHOR_NAME_OJOS:-}"
 EXPECTED_EMAIL="${GIT_AUTHOR_EMAIL_OJOS:-}"
+
+# git が資格情報を要求したときの唯一の供給元。gh のログイン状態に紐づくため、
+# 未ログインなら供給されず、git は黙って別経路へ落ちずに失敗する。
+GH_CREDENTIAL_HELPER='!gh auth git-credential'
 
 log() { echo "[git-identity] $*"; }
 err() { echo "[git-identity] $*" >&2; }
@@ -89,6 +101,17 @@ apply() {
 
   if ! git config --global user.useConfigOnly true; then
     err "ERROR: global 設定に user.useConfigOnly を書き込めません"
+    return 1
+  fi
+
+  # credential.helper をリセットして gh に固定する (#68)。
+  # --unset-all で VS Code が global へ注入したヘルパーを除去し、空文字で system
+  # (/etc/gitconfig) 側の注入も破棄したうえで、gh を唯一の供給元として積む。
+  # 順序が重要で、空文字が先に来なければ system 側が残る。
+  git config --global --unset-all credential.helper || true
+  if ! git config --global --add credential.helper '' ||
+    ! git config --global --add credential.helper "$GH_CREDENTIAL_HELPER"; then
+    err "ERROR: global 設定に credential.helper を書き込めません"
     return 1
   fi
 
@@ -187,7 +210,50 @@ check() {
   rm -rf "$TMP_REPO"
   TMP_REPO=""
 
-  # 6) 冪等性 + credential セクションの保全。
+  # 6) credential.helper が「空 → gh」の順で global に固定されていること (#68)。
+  # 空文字の helper は空行として出力されるため、期待値は「空行 + gh」の 2 行。
+  local helpers expected_helpers
+  helpers="$(git config --global --get-all credential.helper 2>/dev/null || true)"
+  expected_helpers=$'\n'"$GH_CREDENTIAL_HELPER"
+  if [[ "$helpers" == "$expected_helpers" ]]; then
+    log "OK  global credential.helper = 空 → gh"
+  else
+    err "NG  global credential.helper が「空 → gh」でない:"
+    printf '%s\n' "$helpers" | sed 's/^/[git-identity] NG    /' >&2
+    failures=$((failures + 1))
+  fi
+
+  # 7) local 設定を持たないリポジトリで、ホストの資格情報が供給されないこと。
+  #    VS Code は接続のたびにホストへ転送するヘルパーを注入する。5) の identity と
+  #    同じ構図で、こちらは「誰の権限で通信するか」を見る。
+  TMP_REPO="$(mktemp -d)"
+  git init -q "$TMP_REPO"
+  local cred_out got_password gh_token
+  cred_out="$(printf 'protocol=https\nhost=github.com\n\n' |
+    timeout 30 git -C "$TMP_REPO" credential fill 2>/dev/null || true)"
+  got_password="$(printf '%s\n' "$cred_out" | sed -n 's/^password=//p')"
+  # gh 自身が持つトークン。GH_TOKEN が環境にあればそれを返すため、helper の出力と
+  # 同じ供給元になる。トークンそのものは表示せず、一致だけを見る。
+  gh_token="$(gh auth token 2>/dev/null || true)"
+  if [[ -n "$gh_token" ]]; then
+    if [[ "$got_password" == "$gh_token" ]]; then
+      log "OK  local 未設定のリポジトリでも資格情報の供給元は gh のみ"
+    else
+      err "NG  gh 以外の供給元から資格情報が返っている（ホストへ転送されている疑い）"
+      failures=$((failures + 1))
+    fi
+  else
+    if [[ -z "$got_password" ]]; then
+      log "OK  gh 未ログイン時は資格情報が供給されない（ホストへ落ちない）"
+    else
+      err "NG  gh 未ログインなのに資格情報が返った（ホストの資格情報が使われている）"
+      failures=$((failures + 1))
+    fi
+  fi
+  rm -rf "$TMP_REPO"
+  TMP_REPO=""
+
+  # 8) 冪等性 + credential セクションの保全。
   #    適用をもう一度走らせ、global 設定ファイルが 1 バイトも変わらないことを見る。
   #    credential.helper は VS Code が注入するため、消していないことを併せて確認する。
   #

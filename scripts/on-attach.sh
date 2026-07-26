@@ -36,6 +36,34 @@ if ! bash "$HERE/setup-git-identity.sh"; then
   echo "[on-attach] WARN: 手動確認: bash $HERE/setup-git-identity.sh --check" >&2
 fi
 
+# Docker レジストリ資格情報のホスト転送を打ち消す（#68）。
+# VS Code は接続のたびに ~/.docker/config.json へ credsStore: dev-containers-<id> を
+# 書き込む。これはホストのキーチェーンへ問い合わせるヘルパーで、git credential helper と
+# 同じ構造。ホストで docker login した瞬間、コンテナ内の docker push が黙ってその
+# 資格情報を使う状態になる。credsStore を落として、コンテナ内で明示的に docker login
+# したときだけ通るようにする。
+reset_docker_credstore() {
+  local cfg="$HOME/.docker/config.json"
+  [[ -f "$cfg" ]] || return 0
+  python3 - "$cfg" <<'PY' || echo "[on-attach] WARN: ~/.docker/config.json の credsStore を除去できませんでした" >&2
+import json, sys
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        cfg = json.load(f)
+except (OSError, ValueError):
+    # 壊れた config を書き換えて悪化させない。
+    sys.exit(1)
+store = cfg.pop("credsStore", None)
+if store is None:
+    sys.exit(0)
+with open(path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"[on-attach] removed docker credsStore: {store}")
+PY
+}
+reset_docker_credstore
+
 if command -v gh >/dev/null 2>&1; then
   gh auth status >/dev/null 2>&1 && echo "[on-attach] gh auth OK" || echo "[on-attach] WARN: gh auth missing"
 fi
