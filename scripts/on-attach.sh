@@ -26,6 +26,15 @@ inject_env_autoload() {
 inject_env_autoload "$HOME/.bashrc"
 inject_env_autoload "$HOME/.zshrc"
 
+# git identity の無害化（#47）。VS Code の copyGitConfig がリビルドのたびに
+# ホストの ~/.gitconfig をコンテナへコピーし直すため、接続のたびに再適用する。
+# 失敗しても on-attach 全体は落とさない。identity が未適用でも、未指定のまま
+# コミットしようとすれば git 自身が止めるため、ここで打ち切る理由がない。
+if ! bash "$HERE/setup-git-identity.sh"; then
+  echo "[on-attach] WARN: git identity の適用に失敗しました。" >&2
+  echo "[on-attach] WARN: 手動確認: bash scripts/setup-git-identity.sh --check" >&2
+fi
+
 if command -v gh >/dev/null 2>&1; then
   gh auth status >/dev/null 2>&1 && echo "[on-attach] gh auth OK" || echo "[on-attach] WARN: gh auth missing"
 fi
