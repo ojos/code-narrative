@@ -219,6 +219,21 @@ bash scripts/verify.sh
 
 インフラの適用手順（bootstrap → prod の順序、必要なリポジトリ変数）は [terraform/README.md](terraform/README.md) を参照してください。
 
+### ホスト側 VS Code に必要な設定
+
+VS Code の Dev Containers 拡張は、接続のたびに**ホスト OS の資格情報をコンテナへ転送する経路**を注入します。git・Docker・SSH の 3 つが対象で、コンテナ内に認証が無いとき、エラーにならず**ホスト側のアカウントで通ってしまいます**。実際にこのリポジトリでも、対策前は無関係なディレクトリで `git credential fill` が別アカウントの PAT を返していました。
+
+git については、[scripts/setup-git-identity.sh](scripts/setup-git-identity.sh) が接続のたびに global の `credential.helper` を打ち消して `gh` に固定するため、リポジトリ側で塞げます。**Docker はコンテナ側から確実に塞げません**（VS Code の書き込みと `postAttachCommand` の順序に負けることがあります）。ホストの VS Code 設定に次を追加してください。
+
+```jsonc
+// ホストの VS Code ユーザー settings.json
+"dev.containers.dockerCredentialHelper": false
+```
+
+この設定は Dev Containers 拡張がホスト側で解釈するため、**コンテナに接続中のウィンドウでは設定 UI に現れず**、`settings.json` 上でも淡色表示になります（未知のキーではないので警告は出ません）。効いているかは、接続し直したあとに `~/.docker/config.json` を見て `credsStore` が無いことで確認できます。
+
+なお SSH agent forwarding も有効ですが、鍵を `ssh-add` していなければ成立しません。ホストで鍵を登録して運用する場合は、コンテナ内の操作がホストの鍵で通る点に留意してください。
+
 ## AI エージェント運用
 
 このリポジトリは実装の大半を AI エージェントとの協働で進めており、そのための規範と機械ゲートもリポジトリ内に置いています。
