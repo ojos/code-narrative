@@ -16,6 +16,19 @@
   box-sizing: border-box;
 }
 
+/*
+  hidden 属性を持つ要素を確実に隠す。
+
+  ブラウザ既定の [hidden] { display: none } は作者スタイルの display 宣言に負ける。
+  このファイルには .btn { display: inline-block } のように display を指定する規則が
+  あり、そこへ hidden を立てても表示されたままになる（ログイン/ログアウトボタンが
+  両方出ていた原因）。個別セレクタで打ち消す方式は display を持つ要素が増えるたびに
+  同じバグを再発させるため、[hidden] 側を !important で一元的に優先させる。
+*/
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
