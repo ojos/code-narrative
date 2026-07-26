@@ -1,0 +1,45 @@
+name: identity-guard
+
+# コミット identity の検証ゲート（issue #45）。
+#
+# リポジトリ初期の 8 コミットが個人所属の identity で main に直接入り、
+# GitHub の Contributors に別アカウントが現れた。identity の適用漏れを
+# 検知する仕組みが無かったことが原因。ここがその検知層になる。
+#
+# 判定ロジックは scripts/verify-commit-identity.sh に置く。CI と手元で
+# 同じコードを走らせ、push 前にローカルで先に落とせるようにするため。
+#
+# 2 系統を張る:
+#   - pull_request: PR に含まれる全コミットを検査する（通常経路）
+#   - push(main):   main の全履歴を検査する（PR を経由しない直接 push を捕捉）
+#                   直接 push こそが今回の原因なので、こちらを省略しない。
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-commit-identity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 範囲指定で rev-list を回すため全履歴が要る。
+          fetch-depth: 0
+
+      - name: Verify commit identity
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            bash scripts/verify-commit-identity.sh "${BASE_SHA}..${HEAD_SHA}"
+          else
+            bash scripts/verify-commit-identity.sh --full
+          fi
