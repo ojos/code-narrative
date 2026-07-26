@@ -10,7 +10,7 @@ public な GitHub リポジトリの URL を投げると、ディレクトリツ
 
 生成にかかる時間はモデルと対象リポジトリの規模に左右されるため、API は受け付けた時点で `202 Accepted` を即返し、実処理は SQS 経由の Go ワーカーへ切り離しています。**この非同期境界をどう安全に設計したか**が本リポジトリの主題です。
 
-| | |
+| 領域 | 採用技術 |
 |---|---|
 | **同期 API** | Python / FastAPI + Mangum / Lambda（コンテナ）/ API Gateway HTTP API |
 | **非同期ワーカー** | Go / Lambda（コンテナ）/ SQS 標準キュー + DLQ / Amazon Bedrock Converse API |
@@ -178,7 +178,7 @@ bash scripts/verify.sh
 (cd apps/api           && uv sync --frozen && uv run --frozen pytest)
 (cd apps/lambda-worker && go test ./...)
 (cd apps/lambda-stats  && go test ./...)
-(cd apps/frontend      && npm ci && npm test)
+(cd apps/frontend      && npm test)          # 依存パッケージが無いため install 不要
 ```
 
 テストは AWS へアクセスしません（外部依存はモック / フェイク）。フロントエンドをローカルで開く場合は `apps/frontend/config.example.js` を `config.js` へコピーし、自分の Cognito / API の値を設定してください（実値はコミットしません）。
