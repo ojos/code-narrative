@@ -221,13 +221,15 @@ bash scripts/verify.sh
 
 ### ホスト側 VS Code に必要な設定
 
-VS Code の Dev Containers 拡張は、接続のたびに**ホスト OS の資格情報をコンテナへ転送する経路**を注入します。git・Docker・SSH の 3 つが対象で、コンテナ内に認証が無いとき、エラーにならず**ホスト側のアカウントで通ってしまいます**。実際にこのリポジトリでも、対策前は無関係なディレクトリで `git credential fill` が別アカウントの PAT を返していました。
+VS Code の Dev Containers 拡張は、接続のたびに**ホスト OS の資格情報をコンテナへ転送する経路**を注入します。対象は git・Docker・SSH の 3 つです。コンテナ内に認証が無くても、**ホスト側に資格情報や鍵があれば、エラーにならずそちらで通ってしまいます**（ホスト側が空なら何も起きません）。実際にこのリポジトリでも、対策前は無関係なディレクトリで `git credential fill` が別アカウントの PAT を返していました。
 
 git については、[scripts/setup-git-identity.sh](scripts/setup-git-identity.sh) が接続のたびに global の `credential.helper` を打ち消して `gh` に固定するため、リポジトリ側で塞げます。**Docker はコンテナ側から確実に塞げません**（VS Code の書き込みと `postAttachCommand` の順序に負けることがあります）。ホストの VS Code 設定に次を追加してください。
 
 ```jsonc
-// ホストの VS Code ユーザー settings.json
-"dev.containers.dockerCredentialHelper": false
+// ホストの VS Code ユーザー settings.json（既存ファイルにはこのキーだけを追加する）
+{
+  "dev.containers.dockerCredentialHelper": false
+}
 ```
 
 この設定は Dev Containers 拡張がホスト側で解釈するため、**コンテナに接続中のウィンドウでは設定 UI に現れず**、`settings.json` 上でも淡色表示になります（未知のキーではないので警告は出ません）。効いているかは、接続し直したあとに `~/.docker/config.json` を見て `credsStore` が無いことで確認できます。
