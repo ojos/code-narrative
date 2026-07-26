@@ -20,6 +20,18 @@
 - このファイルでタスク手順を再定義しません。タスク手順は `.ai-playbook/task-playbooks/` を参照します。
 - このファイルでレビュー運用を再定義しません。レビュー運用は `.ai-playbook/review-workflow.md` を参照します。
 
+## Claude Code 固有の差分
+
+### intake の起点
+
+実装・修正・issue 起票を求められた場合は、`.claude/skills/intake/` を起点に intake の要否を判定します。規範の正本は `.ai-playbook/intake/` であり、スキル側では再定義しません。
+
+このスキルは Claude Code 固有の配線です。他の実行環境（`.github/copilot-instructions.md` 等）は、同じ規範を各環境の機構で参照します。
+
+### スキル定義のファイル名
+
+`.claude/skills/*/SKILL.md` は Claude Code の機構が要求する固定ファイル名です。`.ai-playbook/shared-ai-rules.md` 8 章の「スキル定義は `lower-kebab-case.md`」の例外として扱います。
+
 ## 導入時の調整
 
 - 規範の配置先が `.ai-playbook` 以外の場合は、上記のパスを実際の配置先へ置き換えます。
