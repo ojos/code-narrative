@@ -35,7 +35,7 @@
     "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
     "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
   },
-  "postCreateCommand": "bash scripts/install-ai-tools.sh",
+  "postCreateCommand": "bash scripts/fix-mount-owner.sh && bash scripts/install-ai-tools.sh",
   "postAttachCommand": "bash scripts/on-attach.sh",
   "customizations": {
     "vscode": {
