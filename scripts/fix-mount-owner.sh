@@ -14,7 +14,14 @@
 #     ここで止めると復旧手段（CLI）ごと失われる。問題は WARN で可視化する。
 set -uo pipefail
 
+# 親を先に置く。ネストしたマウントポイント（.config/*）の親がイメージに存在しない場合、
+# Docker が親ディレクトリごと root:root で作るため、親が root のままだと vscode は
+# ~/.config 直下へ新しい設定を作れなくなる。現在のベースイメージ
+# （mcr.microsoft.com/devcontainers/base:ubuntu）は .config を vscode 所有で同梱しており
+# 実際には起きないが、イメージ側の事情に依存させないため防御的に対象へ含める。
+# 既に vscode 所有なら所有者チェックで no-op になる。
 TARGETS=(
+  "/home/vscode/.config"
   "/home/vscode/.claude"
   "/home/vscode/.gemini"
   "/home/vscode/.aws"
