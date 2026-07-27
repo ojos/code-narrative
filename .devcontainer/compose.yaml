@@ -13,9 +13,26 @@ services:
       - gcloud-storage:/home/vscode/.config/gcloud
       - gh-storage:/home/vscode/.config/gh
     command: sleep infinity
+
+# ボリューム名を明示して固定する（#78）。
+#
+# 明示しない場合、実体のボリューム名は「compose プロジェクト名 + ボリューム名」に
+# なる。つまりプロジェクト名が変わった瞬間に別のボリュームへ切り替わり、上で永続化
+# したはずの認証状態と作業履歴が空の状態から作り直される。実際に #77 で
+# compose.app.yaml へ top-level `name:` を足したときに起きた。
+#
+# 明示した名前はそのまま実体名になり、プロジェクト名の接頭辞は付かない。これで
+# ボリュームの identity がプロジェクト名から独立し、今後プロジェクト名が変わっても
+# 中身は保たれる。リポジトリ名を基準にした固定値なので、クローン先のディレクトリ名
+# にも依存しない。
 volumes:
   claude-storage:
+    name: code-narrative-devcontainer-claude-storage
   gemini-storage:
+    name: code-narrative-devcontainer-gemini-storage
   aws-storage:
+    name: code-narrative-devcontainer-aws-storage
   gcloud-storage:
+    name: code-narrative-devcontainer-gcloud-storage
   gh-storage:
+    name: code-narrative-devcontainer-gh-storage

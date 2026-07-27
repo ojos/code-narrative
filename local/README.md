@@ -23,8 +23,9 @@ bash scripts/integration-test.sh
 # 画面を開く（ホスト側のブラウザから）
 open http://localhost:8080
 
-# 破棄
-docker compose -f .devcontainer/compose.app.yaml down -v
+# 破棄（devcontainer の中からは down ではなく stop + rm。理由は後述）
+docker compose -f .devcontainer/compose.app.yaml stop
+docker compose -f .devcontainer/compose.app.yaml rm -f -v
 ```
 
 `scripts/verify.sh` からも同じ統合テストが実行されます（`scripts/acceptance.sh` 経由）。
@@ -49,10 +50,22 @@ curl http://apigw:8080/health   # devcontainer の中から通る
 `ports:` で publish したポートは**ホスト側にしか現れず、devcontainer からは見えません**。
 ネットワークを共有していなければ、コンテナの中からしかアプリに触れません。
 
-> **devcontainer 内から `up` するときはプロジェクト名を合わせてください。**
-> VS Code は `-p ojos-code-narrative_devcontainer` で起動しています。`-p` を付けずに
-> `up` すると、同じサービスのもう一組が別プロジェクトとして立ち上がります。
-> `scripts/integration-test.sh` は自分のコンテナのラベルから解決して自動で合わせます。
+プロジェクト名は `compose.app.yaml` の top-level `name:`（`code-narrative-local`）です。
+**この指定は devcontainer 経由でも効きます**（VS Code は `-p` で上書きしません）。素の
+ホストから叩いても同じ名前に落ちるため、`-p` を付けなくても同じサービスのもう一組が
+別プロジェクトとして立ち上がることはありません。`scripts/integration-test.sh` は自分の
+コンテナのラベルからプロジェクト名を解決するので、どちらの経路でも一致します。
+
+> **devcontainer 内から `down` は使わないでください。** プロジェクトを `app` と共有して
+> いるため、`down` はコンテナを消したあとネットワークの削除で失敗します（`app` が
+> 繋がったままなので落とせません）。上記のとおり `stop` + `rm -f -v` を使います。
+
+> **`-f` に `compose.yaml` を足して `down -v` しないでください。** 開発コンテナ側の
+> 永続化ボリューム（認証状態・Claude Code の履歴）まで削除されます。
+
+`compose.yaml` の永続化ボリュームには実体名を明示しています（`name:`）。明示しないと
+実体名が「プロジェクト名 + ボリューム名」になり、プロジェクト名を変えた瞬間に空の
+ボリュームへ切り替わって認証状態と作業履歴が失われるためです（#78）。
 
 > **アプリを一緒に起動したくない場合**は `devcontainer.json` に
 > `"runServices": ["app"]` を足してください。devcontainer のリビルド時間も短くなります。
