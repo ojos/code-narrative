@@ -1,0 +1,52 @@
+# ElasticMQ の宣言的キュー定義（本番の terraform/modules/sqs に対応）。
+#
+# これはテンプレートです。起動時に entrypoint.sh が @@VISIBILITY_TIMEOUT@@ を
+# 環境変数 LOCAL_QUEUE_VISIBILITY_TIMEOUT の値へ置き換えて /opt/elasticmq.conf を
+# 生成します。HOCON の ${?ENV} による参照を使わないのは、elasticmq-native が
+# GraalVM ネイティブイメージで、実行時の環境変数を設定解決に反映しないためです。
+#
+# 本番との対応:
+#   code-narrative-jobs      <- module.sqs queue_name
+#   code-narrative-jobs-dlq  <- module.sqs dlq_name
+#   maxReceiveCount = 5      <- var.sqs_max_receive_count の既定値
+#
+# 【意図的な差分】defaultVisibilityTimeout
+#   本番は worker_timeout(300s) x 6 = 1800 秒。ローカルで同じ値にすると、
+#   再配信を待つ検証（DLQ 到達）に maxReceiveCount x 1800 秒 = 2.5 時間かかり、
+#   非対話の統合テストとして成立しない。再配信の「回数」の挙動は変えずに
+#   「間隔」だけを縮めるため、ローカルは 5 秒とする。
+#   処理時間そのものは Bedrock スタブにより 1 秒未満で、リースの意味は保たれる。
+#
+#   実 Bedrock へ切り替えると生成に数十秒かかり、5 秒では処理中に再配信されて
+#   重複生成になる。環境変数 LOCAL_QUEUE_VISIBILITY_TIMEOUT（例: "180 seconds"）で
+#   引き上げること。手順は local/README.md を参照。
+
+include classpath("application.conf")
+
+node-address {
+  protocol = http
+  host = queue
+  port = 9324
+  context-path = ""
+}
+
+rest-sqs {
+  enabled = true
+  bind-port = 9324
+  bind-hostname = "0.0.0.0"
+  sqs-limits = strict
+}
+
+queues {
+  code-narrative-jobs-dlq {
+    defaultVisibilityTimeout = @@VISIBILITY_TIMEOUT@@
+  }
+
+  code-narrative-jobs {
+    defaultVisibilityTimeout = @@VISIBILITY_TIMEOUT@@
+    deadLettersQueue {
+      name = "code-narrative-jobs-dlq"
+      maxReceiveCount = 5
+    }
+  }
+}

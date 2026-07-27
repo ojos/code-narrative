@@ -1,0 +1,191 @@
+# ローカル実行環境（本番の非同期パスを docker-compose で再現する）。
+#
+# これは **アプリを動かすための** compose であり、開発コンテナを起動する
+# `.devcontainer/compose.yaml` とは別物です。使い方と設計上の割り切りは
+# local/README.md を参照してください。
+#
+#   docker compose up -d --wait     # 起動
+#   bash scripts/integration-test.sh  # 統合テスト
+#   docker compose down -v          # 破棄
+#
+# 本番との対応:
+#   api / worker  : 本番と同一の Dockerfile から作ったイメージを
+#                   Lambda RIE 経由で起動する（ハンドラ本体は本番と同じコード）。
+#   apigw / esm   : API Gateway と SQS イベントソースマッピングのエミュレータ。
+#                   起動経路だけをローカル固有にし、処理本体は分岐させない。
+#   dynamodb/queue: DynamoDB Local と ElasticMQ（SQS 互換）。
+#   *-stub        : ローカル代替が存在しない外部サービス（Bedrock / GitHub）。
+
+name: code-narrative-local
+
+x-aws-common: &aws-common
+  AWS_REGION: ap-northeast-1
+  AWS_DEFAULT_REGION: ap-northeast-1
+  # ローカルのエンドポイントは署名を検証しないが、SDK が資格情報の解決に失敗すると
+  # リクエスト自体を送れないためダミーを与える。実 AWS へ切り替える場合のみ上書きする。
+  #
+  # DynamoDB Local はアクセスキー ID の文字種を検証し、ハイフンを含む値を
+  # UnrecognizedClientException で拒否する。英数字のみのダミーにすること。
+  AWS_ACCESS_KEY_ID: ${LOCAL_AWS_ACCESS_KEY_ID:-dummy}
+  AWS_SECRET_ACCESS_KEY: ${LOCAL_AWS_SECRET_ACCESS_KEY:-dummysecret}
+  AWS_SESSION_TOKEN: ${LOCAL_AWS_SESSION_TOKEN:-}
+  AWS_ENDPOINT_URL_DYNAMODB: http://dynamodb:8000
+  AWS_ENDPOINT_URL_SQS: http://queue:9324
+
+x-app-common: &app-common
+  DYNAMODB_TABLE: CodeNarratives
+  DYNAMODB_GSI_NAME: user_id-created_at-index
+  SQS_QUEUE_URL: http://queue:9324/000000000000/code-narrative-jobs
+  SQS_DLQ_URL: http://queue:9324/000000000000/code-narrative-jobs-dlq
+  # terraform/environments/prod/variables.tf の bedrock_model_ids 既定値と同一。
+  MODEL_WHITELIST: jp.anthropic.claude-sonnet-4-5-20250929-v1:0,amazon.nova-lite-v1:0,deepseek.v3.2,qwen.qwen3-32b-v1:0,google.gemma-3-12b-it
+
+services:
+  # --- データストア（DynamoDB Local） ---
+  dynamodb:
+    image: amazon/dynamodb-local:2.5.2
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
+    working_dir: /home/dynamodblocal
+
+  # --- キュー（ElasticMQ: SQS 互換 + DLQ + redrive） ---
+  queue:
+    build:
+      context: ./local/elasticmq
+    environment:
+      # 未設定なら elasticmq.conf の既定（5 秒）。実 Bedrock 使用時は引き上げる。
+      LOCAL_QUEUE_VISIBILITY_TIMEOUT: ${LOCAL_QUEUE_VISIBILITY_TIMEOUT:-}
+    ports:
+      - "${LOCAL_QUEUE_HOST_PORT:-9324}:9324"
+
+  # --- 外部サービスのスタブ（ローカル代替が存在しない層） ---
+  bedrock-stub:
+    build: &emulator-build
+      context: .
+      dockerfile: local/emulator/Dockerfile
+    command: ["python", "bedrock_stub.py"]
+
+  github-stub:
+    build: *emulator-build
+    command: ["python", "github_stub.py"]
+
+  # --- 初期化（テーブル作成・キュー確認。冪等） ---
+  init:
+    build: *emulator-build
+    command: ["python", "init_resources.py"]
+    environment:
+      <<: [*aws-common, *app-common]
+    depends_on:
+      - dynamodb
+      - queue
+
+  # --- API（本番と同一イメージ + Lambda RIE） ---
+  api:
+    build:
+      context: ./apps/api
+    # 認証は本番の既定のまま（AUTH_ALLOW_UNVERIFIED_JWT 未設定 = 署名未検証トークンを
+    # 拒否）。ローカルのバイパスは apigw エミュレータ側に閉じている。
+    environment:
+      <<: [*aws-common, *app-common]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+  # --- API Gateway (HTTP API) エミュレータ ---
+  apigw:
+    build: *emulator-build
+    command: ["python", "apigw.py"]
+    environment:
+      LOCAL_API_LAMBDA_ENDPOINT: http://api:8080
+      LOCAL_CORS_ALLOW_ORIGINS: ${LOCAL_CORS_ALLOW_ORIGINS:-http://localhost:8080}
+    ports:
+      - "${LOCAL_API_HOST_PORT:-8081}:8080"
+    depends_on:
+      - api
+    healthcheck:
+      # /health は認証不要ルート。API コンテナまで到達できて初めて healthy とする。
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)",
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+
+  # --- Worker（本番と同一イメージ + Lambda RIE） ---
+  worker:
+    build:
+      context: ./apps/lambda-worker
+    # 本番の Dockerfile は ENTRYPOINT を ./main に固定しているため、ローカルでは
+    # ベースイメージ同梱の RIE を明示的に挟む。バイナリ自体は本番と同一。
+    entrypoint: ["/usr/local/bin/aws-lambda-rie", "/var/task/main"]
+    environment:
+      <<: [*aws-common, *app-common]
+      # 既定はスタブ。実 Bedrock を使う場合のみ local/README.md の手順で上書きする。
+      AWS_ENDPOINT_URL_BEDROCK_RUNTIME: ${LOCAL_BEDROCK_ENDPOINT:-http://bedrock-stub:8080}
+      GITHUB_CODELOAD_BASE_URL: ${LOCAL_GITHUB_CODELOAD_BASE_URL:-http://github-stub:8080}
+      GITHUB_API_BASE_URL: ${LOCAL_GITHUB_API_BASE_URL:-http://github-stub:8080}
+      # 再配信の検証を現実的な時間で回すため、リースを可視性タイムアウトへ合わせる
+      # （本番は 900 秒。理由は local/elasticmq/elasticmq.conf を参照）。
+      # 実 Bedrock 使用時は LOCAL_QUEUE_VISIBILITY_TIMEOUT と揃えて引き上げること。
+      PROCESSING_LEASE_SECONDS: ${LOCAL_PROCESSING_LEASE_SECONDS:-5}
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+  # --- SQS イベントソースマッピングのエミュレータ ---
+  esm:
+    build: *emulator-build
+    command: ["python", "esm.py"]
+    environment:
+      <<: [*aws-common, *app-common]
+      LOCAL_WORKER_LAMBDA_ENDPOINT: http://worker:8080
+    depends_on:
+      init:
+        condition: service_completed_successfully
+
+  # --- フロントエンド静的配信（CloudFront + S3 の代替） ---
+  frontend:
+    build: *emulator-build
+    command: ["python", "frontend_server.py"]
+    environment:
+      LOCAL_API_PUBLIC_URL: http://localhost:${LOCAL_API_HOST_PORT:-8081}
+      LOCAL_FRONTEND_PUBLIC_URL: http://localhost:${LOCAL_FRONTEND_HOST_PORT:-8080}
+      LOCAL_AUTH_SUBJECT: ${LOCAL_AUTH_SUBJECT:-local-user}
+    ports:
+      - "${LOCAL_FRONTEND_HOST_PORT:-8080}:8080"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/config.js', timeout=5)",
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 5s
+
+  # --- 統合テスト（profile: test。up では起動しない） ---
+  #
+  # テストをコンテナ内で走らせるのは、この devcontainer が
+  # docker-outside-of-docker 構成で、publish したポートがホスト側にしか現れないため。
+  # compose ネットワーク内で実行すれば devcontainer からでも素のホストからでも同じに通る。
+  test:
+    build: *emulator-build
+    profiles: ["test"]
+    working_dir: /opt/tests
+    command: ["python", "-m", "pytest", "-v"]
+    environment:
+      <<: [*aws-common, *app-common]
+      LOCAL_API_BASE_URL: http://apigw:8080
+      # 実 Bedrock へ切り替えると生成に時間がかかるため、待ち時間を引き上げられるようにする。
+      LOCAL_JOB_TIMEOUT_SECONDS: ${LOCAL_JOB_TIMEOUT_SECONDS:-120}
+      LOCAL_DLQ_TIMEOUT_SECONDS: ${LOCAL_DLQ_TIMEOUT_SECONDS:-150}
+    depends_on:
+      apigw:
+        condition: service_healthy

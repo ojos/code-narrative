@@ -84,6 +84,25 @@ else
   echo "[acceptance] (apps/frontend) skip: package.json not found (未実装)"
 fi
 
+# --- 統合テスト (docker compose によるローカル環境) ---
+# 単体テストが各アプリの内部を、この統合テストがアプリ間の経路(API → SQS →
+# Worker → Bedrock → DynamoDB)を検証する。実 AWS へは接続しない。
+#
+# docker が使えない環境ではスキップする。上記の単体テストと同じ「存在するものだけ
+# 検証する」方針に合わせ、ツールチェーン不在を失敗にしない。
+# 明示的に外したい場合は ACCEPTANCE_SKIP_INTEGRATION=1 を設定する。
+if [[ "${ACCEPTANCE_SKIP_INTEGRATION:-0}" == "1" ]]; then
+  echo "[acceptance] (integration) skip: ACCEPTANCE_SKIP_INTEGRATION=1"
+elif [[ ! -f compose.yaml ]]; then
+  echo "[acceptance] (integration) skip: compose.yaml not found"
+elif ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+  echo "[acceptance] (integration) skip: docker が使えません"
+else
+  echo "[acceptance] (integration) bash scripts/integration-test.sh"
+  bash scripts/integration-test.sh
+  ran_any=1
+fi
+
 if [[ "$ran_any" -eq 0 ]]; then
   echo "[acceptance] no app was verified. 受け入れ対象が 1 つも見つかりません。" >&2
   exit 1
