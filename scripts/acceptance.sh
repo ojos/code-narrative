@@ -93,8 +93,8 @@ fi
 # 明示的に外したい場合は ACCEPTANCE_SKIP_INTEGRATION=1 を設定する。
 if [[ "${ACCEPTANCE_SKIP_INTEGRATION:-0}" == "1" ]]; then
   echo "[acceptance] (integration) skip: ACCEPTANCE_SKIP_INTEGRATION=1"
-elif [[ ! -f compose.yaml ]]; then
-  echo "[acceptance] (integration) skip: compose.yaml not found"
+elif [[ ! -f .devcontainer/compose.app.yaml ]]; then
+  echo "[acceptance] (integration) skip: .devcontainer/compose.app.yaml not found"
 elif ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   echo "[acceptance] (integration) skip: docker が使えません"
 else

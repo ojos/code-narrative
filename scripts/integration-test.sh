@@ -8,7 +8,7 @@
 #   bash scripts/integration-test.sh
 #
 # 環境変数:
-#   INTEGRATION_TEST_DOWN=1  終了後にスタックを破棄する（既定は起動したまま残す）。
+#   INTEGRATION_TEST_DOWN=1  終了後にコンテナを破棄する（既定は起動したまま残す）。
 #   PYTEST_ARGS="-k xxx"     pytest へ渡す追加引数。
 #
 # 終了コード: 0 = 合格 / 非0 = 不合格
@@ -18,6 +18,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HERE")"
 cd "$ROOT"
+
+COMPOSE_APP_FILE=".devcontainer/compose.app.yaml"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[integration] docker が見つかりません。Docker をインストールしてください。" >&2
@@ -34,26 +36,53 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ ! -f "$COMPOSE_APP_FILE" ]]; then
+  echo "[integration] $COMPOSE_APP_FILE が見つかりません。" >&2
+  exit 1
+fi
+
+# devcontainer の中で動いている場合、VS Code が使っているのと同じ compose
+# プロジェクト名へ合わせる。合わせないと、既に起動している各サービスの
+# **もう一組**が別プロジェクトとして立ち上がる（devcontainer.json が
+# compose.yaml と compose.app.yaml を合成しているため）。
+project_args=()
+if [[ -f /.dockerenv ]]; then
+  self_project="$(docker inspect "$(hostname)" \
+    --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null || true)"
+  if [[ -n "$self_project" && "$self_project" != "<no value>" ]]; then
+    project_args=(-p "$self_project")
+    echo "[integration] compose プロジェクト: $self_project (devcontainer と共有)"
+  fi
+fi
+
+# compose 呼び出しを 1 箇所へ集約する（-f と -p の付け忘れを防ぐ）。
+compose() {
+  docker compose "${project_args[@]}" -f "$COMPOSE_APP_FILE" "$@"
+}
+
 cleanup() {
   if [[ "${INTEGRATION_TEST_DOWN:-0}" == "1" ]]; then
-    echo "[integration] スタックを破棄します"
-    docker compose down -v --remove-orphans || true
+    # `down` ではなく stop + rm にするのは、プロジェクトを devcontainer と共有して
+    # いる場合に `down` が app の繋がっているネットワークまで畳もうとするため。
+    echo "[integration] コンテナを破棄します"
+    compose stop >/dev/null 2>&1 || true
+    compose rm -f -v >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
 
-echo "[integration] スタックを起動します (docker compose up -d --wait --build)"
-if ! docker compose up -d --wait --build; then
+echo "[integration] スタックを起動します"
+if ! compose up -d --wait --build; then
   echo "[integration] 起動に失敗しました。直近のログを出力します。" >&2
-  docker compose ps || true
-  docker compose logs --tail 100 || true
+  compose ps || true
+  compose logs --tail 100 || true
   exit 1
 fi
 
 # test サービスは profile 配下のため、上の `up --build` の対象にならない。
 # 明示的にビルドしないと、テストコードを変更しても古いイメージのまま実行される。
 echo "[integration] テストイメージをビルドします"
-if ! docker compose build test; then
+if ! compose build test; then
   echo "[integration] テストイメージのビルドに失敗しました。" >&2
   exit 1
 fi
@@ -66,7 +95,7 @@ echo "[integration] 統合テストを実行します"
 #
 # --no-deps: 依存は上の `up --wait` で起動済み。ここで再起動させない。
 # shellcheck disable=SC2086 # PYTEST_ARGS は複数引数として展開させる
-test_container="$(docker compose run -d --no-deps test \
+test_container="$(compose run -d --no-deps test \
   python -m pytest -v --color=no ${PYTEST_ARGS:-} 2>/dev/null)"
 
 if [[ -z "$test_container" ]]; then
@@ -84,7 +113,7 @@ docker logs "$test_container" 2>&1
 
 if [[ "$test_exit" != "0" ]]; then
   echo "[integration] 統合テストが失敗しました (exit ${test_exit})。直近のログを出力します。" >&2
-  docker compose logs --tail 200 api worker esm apigw || true
+  compose logs --tail 200 api worker esm apigw || true
   exit 1
 fi
 

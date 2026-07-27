@@ -9,9 +9,13 @@ docker-compose で再現し、**実 AWS リソースを一切使わずに非対�
 
 ## 使い方
 
+**VS Code でこのワークスペースを devcontainer として開くと、アプリのコンテナも一緒に
+起動します。**`devcontainer.json` が `compose.yaml`（開発コンテナ）と
+`compose.app.yaml`（アプリ）を合成しているためです。手で起動・破棄する場合は次のとおり。
+
 ```bash
 # 起動（初回はイメージのビルドが走ります）
-docker compose up -d --wait
+docker compose -f .devcontainer/compose.app.yaml up -d --wait
 
 # 統合テスト（非対話・終了コードで合否）
 bash scripts/integration-test.sh
@@ -20,15 +24,38 @@ bash scripts/integration-test.sh
 open http://localhost:8080
 
 # 破棄
-docker compose down -v
+docker compose -f .devcontainer/compose.app.yaml down -v
 ```
 
 `scripts/verify.sh` からも同じ統合テストが実行されます（`scripts/acceptance.sh` 経由）。
 docker が使えない環境では自動でスキップします。
 
-> **compose ファイルが 2 つあります。** リポジトリ直下の `compose.yaml` が
-> **アプリを動かす**ためのもの、`.devcontainer/compose.yaml` が**開発コンテナを起動する**
-> ためのものです。前者は後者の中からでも、素のホストからでも同じように動きます。
+### compose ファイルが 2 つあります
+
+| ファイル | 責務 |
+|---|---|
+| `.devcontainer/compose.yaml` | 開発コンテナ（`app`）を起動する |
+| `.devcontainer/compose.app.yaml` | アプリ本体のローカル実行環境を起動する |
+
+`devcontainer.json` が両方を `dockerComposeFile` に並べているので、**`app` とアプリ各
+サービスは同じ compose プロジェクト・同じネットワークに入ります**。その結果、
+devcontainer の中から publish 済みポートを介さずにサービス名で直接叩けます。
+
+```bash
+curl http://apigw:8080/health   # devcontainer の中から通る
+```
+
+これは前提として重要です。この devcontainer は docker-outside-of-docker 構成のため、
+`ports:` で publish したポートは**ホスト側にしか現れず、devcontainer からは見えません**。
+ネットワークを共有していなければ、コンテナの中からしかアプリに触れません。
+
+> **devcontainer 内から `up` するときはプロジェクト名を合わせてください。**
+> VS Code は `-p ojos-code-narrative_devcontainer` で起動しています。`-p` を付けずに
+> `up` すると、同じサービスのもう一組が別プロジェクトとして立ち上がります。
+> `scripts/integration-test.sh` は自分のコンテナのラベルから解決して自動で合わせます。
+
+> **アプリを一緒に起動したくない場合**は `devcontainer.json` に
+> `"runServices": ["app"]` を足してください。devcontainer のリビルド時間も短くなります。
 
 ## 構成
 
@@ -45,6 +72,12 @@ docker が使えない環境では自動でスキップします。
 | `frontend` | `local/emulator/frontend_server.py` | CloudFront + S3 |
 | `init` | `local/emulator/init_resources.py` | Terraform（テーブル・キューの定義） |
 | `test` | `local/tests/` | （ローカル専用） |
+
+エミュレータ系のイメージは、共通ベース（Python + boto3 + `http_service.py` /
+`lambda_rie.py`）の上に**そのサービスのモジュールだけ**を載せた別イメージです
+（`local/emulator/Dockerfile` のマルチステージ）。1 イメージを `command` で使い分けると、
+どのコンテナが何を持っているのかがイメージから読めなくなるためです。ベースは共通の親
+なので、分けてもディスク上のレイヤは共有されます。
 
 ### なぜ Lambda RIE を挟むのか
 
@@ -88,7 +121,7 @@ Cognito Hosted UI / PKCE / API Gateway の JWT Authorizer は docker-compose で
 変わりません。**エンドポイントと資格情報を環境変数で差し替えるだけです。
 
 ```bash
-# 1. 一時的な資格情報を取り出す（.env や compose.yaml へ値を書かないこと）
+# 1. 一時的な資格情報を取り出す（.env や compose ファイルへ値を書かないこと）
 eval "$(aws configure export-credentials --profile <your-profile> --format env)"
 
 # 2. Bedrock だけ実エンドポイントへ向けて起動し直す
@@ -103,7 +136,7 @@ export LOCAL_PROCESSING_LEASE_SECONDS=180
 export LOCAL_JOB_TIMEOUT_SECONDS=300
 export LOCAL_DLQ_TIMEOUT_SECONDS=1000
 
-docker compose up -d --wait
+docker compose -f .devcontainer/compose.app.yaml up -d --wait
 
 # 3. 同じ統合テストが通ることを確認する（Bedrock 分の課金が発生します）
 bash scripts/integration-test.sh
@@ -121,7 +154,7 @@ DynamoDB と SQS はローカルのままです（`AWS_ENDPOINT_URL_DYNAMODB` /
 ```bash
 LOCAL_GITHUB_CODELOAD_BASE_URL=https://codeload.github.com \
 LOCAL_GITHUB_API_BASE_URL=https://api.github.com \
-docker compose up -d --wait
+docker compose -f .devcontainer/compose.app.yaml up -d --wait
 ```
 
 ## 主な環境変数
@@ -143,9 +176,9 @@ docker compose up -d --wait
 | `INTEGRATION_TEST_DOWN` | 未設定 | `1` で統合テスト後にスタックを破棄 |
 | `PYTEST_ARGS` | 未設定 | pytest へ渡す追加引数（例: `-k not dead_letter`） |
 
-リポジトリ直下の `.env` は**このプロジェクトの秘密情報**（`GEMINI_API_KEY` 等）を
-置く場所で、compose もこれを読みます。ローカル環境の設定は `LOCAL_` 接頭辞で
-名前空間を分けているため、両者が衝突することはありません。
+これらはシェルの環境変数として渡します。compose ファイルが `.devcontainer/` 配下に
+あるため、compose が既定で読む `.env` も `.devcontainer/.env` になります。リポジトリ直下の
+`.env`（`GEMINI_API_KEY` 等の秘密情報）が compose へ流れ込むことはありません。
 
 ## 本番と一致しない点
 
@@ -170,7 +203,6 @@ docker compose up -d --wait
 - **bind mount を使っていません。** この devcontainer は docker-outside-of-docker 構成で、
   ホスト側デーモンから見たパスとコンテナ内のパスが一致しないためです。フロントエンドの
   静的ファイルなどはイメージへ `COPY` で焼き込みます。コードを変更したら
-  `docker compose up -d --build` で反映してください。
-- **統合テストはコンテナの中で走ります**（`test` サービス）。publish したポートは
-  ホスト側にしか現れず、devcontainer の中からは見えないためです。compose ネットワークの
-  内側で実行すれば、devcontainer からでも素のホストからでも同じ結果になります。
+  `docker compose -f .devcontainer/compose.app.yaml up -d --build` で反映してください。
+- **統合テストはコンテナの中で走ります**（`test` サービス）。pytest / boto3 / requests を
+  devcontainer 側へ入れずに済ませ、素のホストからでも同じ手順で通るようにするためです。

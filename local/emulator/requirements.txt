@@ -1,7 +1,6 @@
-# ローカルエミュレータと統合テストの依存。
+# 共通ベースの依存。
 #
 # boto3 は apps/api が uv.lock で固定しているものと同じ版に揃え、
 # エンドポイント上書き（AWS_ENDPOINT_URL_*）の挙動差を持ち込まない。
+# テスト専用の依存は local/tests/requirements.txt に分けている。
 boto3==1.35.90
-pytest==8.3.4
-requests==2.32.3

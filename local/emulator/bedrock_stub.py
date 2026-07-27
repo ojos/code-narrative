@@ -1,6 +1,6 @@
 """Amazon Bedrock Converse API のローカルスタブ。
 
-Bedrock にはローカル代替が存在しないため、`compose.yaml` の既定ではこのスタブへ
+Bedrock にはローカル代替が存在しないため、`compose.app.yaml` の既定ではこのスタブへ
 ``AWS_ENDPOINT_URL_BEDROCK_RUNTIME`` を向ける。これにより統合テストは
 **オフライン・課金ゼロ・決定的**に完走する。
 

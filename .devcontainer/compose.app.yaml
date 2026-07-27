@@ -1,12 +1,23 @@
 # ローカル実行環境（本番の非同期パスを docker-compose で再現する）。
 #
-# これは **アプリを動かすための** compose であり、開発コンテナを起動する
-# `.devcontainer/compose.yaml` とは別物です。使い方と設計上の割り切りは
-# local/README.md を参照してください。
+# 隣の `compose.yaml` は **開発コンテナ（app）を起動する**ためのもの、
+# こちらは **アプリを動かす**ためのものです。devcontainer.json が両方を
+# dockerComposeFile として合成するため、VS Code でワークスペースを開くと
+# app と同じプロジェクト・同じネットワークで全サービスが起動します。
 #
-#   docker compose up -d --wait     # 起動
-#   bash scripts/integration-test.sh  # 統合テスト
-#   docker compose down -v          # 破棄
+# ネットワークを共有するので、devcontainer の中から `http://apigw:8080` の
+# ようにサービス名で直接到達できます（publish したポートはホスト側にしか
+# 現れないため、これが無いと devcontainer からは触れません）。
+#
+# 既定のファイル名ではないので、手で叩くときは -f が必要です:
+#
+#   docker compose -f .devcontainer/compose.app.yaml up -d --wait
+#   bash scripts/integration-test.sh
+#   docker compose -f .devcontainer/compose.app.yaml down -v
+#
+# ただし devcontainer 内から up する場合は、VS Code が使うプロジェクト名
+# （-p ojos-code-narrative_devcontainer）へ合わせないと同じサービスが
+# もう一組立ち上がります。scripts/integration-test.sh はこれを自動で合わせます。
 #
 # 本番との対応:
 #   api / worker  : 本番と同一の Dockerfile から作ったイメージを
@@ -16,6 +27,8 @@
 #   dynamodb/queue: DynamoDB Local と ElasticMQ（SQS 互換）。
 #   *-stub        : ローカル代替が存在しない外部サービス（Bedrock / GitHub）。
 
+# devcontainer 経由では VS Code が -p で上書きする。素のホストで単独利用する
+# ときの既定名としてのみ効く。
 name: code-narrative-local
 
 x-aws-common: &aws-common
@@ -50,7 +63,7 @@ services:
   # --- キュー（ElasticMQ: SQS 互換 + DLQ + redrive） ---
   queue:
     build:
-      context: ./local/elasticmq
+      context: ../local/elasticmq
     environment:
       # 未設定なら elasticmq.conf の既定（5 秒）。実 Bedrock 使用時は引き上げる。
       LOCAL_QUEUE_VISIBILITY_TIMEOUT: ${LOCAL_QUEUE_VISIBILITY_TIMEOUT:-}
@@ -59,19 +72,23 @@ services:
 
   # --- 外部サービスのスタブ（ローカル代替が存在しない層） ---
   bedrock-stub:
-    build: &emulator-build
-      context: .
+    build:
+      context: ..
       dockerfile: local/emulator/Dockerfile
-    command: ["python", "bedrock_stub.py"]
+      target: bedrock-stub
 
   github-stub:
-    build: *emulator-build
-    command: ["python", "github_stub.py"]
+    build:
+      context: ..
+      dockerfile: local/emulator/Dockerfile
+      target: github-stub
 
   # --- 初期化（テーブル作成・キュー確認。冪等） ---
   init:
-    build: *emulator-build
-    command: ["python", "init_resources.py"]
+    build:
+      context: ..
+      dockerfile: local/emulator/Dockerfile
+      target: init
     environment:
       <<: [*aws-common, *app-common]
     depends_on:
@@ -81,7 +98,7 @@ services:
   # --- API（本番と同一イメージ + Lambda RIE） ---
   api:
     build:
-      context: ./apps/api
+      context: ../apps/api
     # 認証は本番の既定のまま（AUTH_ALLOW_UNVERIFIED_JWT 未設定 = 署名未検証トークンを
     # 拒否）。ローカルのバイパスは apigw エミュレータ側に閉じている。
     environment:
@@ -92,8 +109,10 @@ services:
 
   # --- API Gateway (HTTP API) エミュレータ ---
   apigw:
-    build: *emulator-build
-    command: ["python", "apigw.py"]
+    build:
+      context: ..
+      dockerfile: local/emulator/Dockerfile
+      target: apigw
     environment:
       LOCAL_API_LAMBDA_ENDPOINT: http://api:8080
       LOCAL_CORS_ALLOW_ORIGINS: ${LOCAL_CORS_ALLOW_ORIGINS:-http://localhost:8080}
@@ -118,7 +137,7 @@ services:
   # --- Worker（本番と同一イメージ + Lambda RIE） ---
   worker:
     build:
-      context: ./apps/lambda-worker
+      context: ../apps/lambda-worker
     # 本番の Dockerfile は ENTRYPOINT を ./main に固定しているため、ローカルでは
     # ベースイメージ同梱の RIE を明示的に挟む。バイナリ自体は本番と同一。
     entrypoint: ["/usr/local/bin/aws-lambda-rie", "/var/task/main"]
@@ -138,8 +157,10 @@ services:
 
   # --- SQS イベントソースマッピングのエミュレータ ---
   esm:
-    build: *emulator-build
-    command: ["python", "esm.py"]
+    build:
+      context: ..
+      dockerfile: local/emulator/Dockerfile
+      target: esm
     environment:
       <<: [*aws-common, *app-common]
       LOCAL_WORKER_LAMBDA_ENDPOINT: http://worker:8080
@@ -149,8 +170,10 @@ services:
 
   # --- フロントエンド静的配信（CloudFront + S3 の代替） ---
   frontend:
-    build: *emulator-build
-    command: ["python", "frontend_server.py"]
+    build:
+      context: ..
+      dockerfile: local/emulator/Dockerfile
+      target: frontend
     environment:
       LOCAL_API_PUBLIC_URL: http://localhost:${LOCAL_API_HOST_PORT:-8081}
       LOCAL_FRONTEND_PUBLIC_URL: http://localhost:${LOCAL_FRONTEND_HOST_PORT:-8080}
@@ -172,14 +195,14 @@ services:
 
   # --- 統合テスト（profile: test。up では起動しない） ---
   #
-  # テストをコンテナ内で走らせるのは、この devcontainer が
-  # docker-outside-of-docker 構成で、publish したポートがホスト側にしか現れないため。
-  # compose ネットワーク内で実行すれば devcontainer からでも素のホストからでも同じに通る。
+  # テストをコンテナで走らせるのは、pytest / boto3 / requests を devcontainer 側へ
+  # 入れずに済ませ、素のホストからでも同じ手順で通るようにするため。
   test:
-    build: *emulator-build
+    build:
+      context: ..
+      dockerfile: local/emulator/Dockerfile
+      target: test
     profiles: ["test"]
-    working_dir: /opt/tests
-    command: ["python", "-m", "pytest", "-v"]
     environment:
       <<: [*aws-common, *app-common]
       LOCAL_API_BASE_URL: http://apigw:8080
