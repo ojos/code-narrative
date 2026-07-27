@@ -12,6 +12,25 @@ if [ -z "$VISIBILITY_TIMEOUT" ]; then
   VISIBILITY_TIMEOUT="5 seconds"
 fi
 
+# 受理する形を「数値 + 空白 + 単位」に限定する。
+#
+# エスケープではなく検証にするのは、この値がそのまま sed の置換文字列になるため。
+# "&" や "|" や "\" を含む値は置換を壊すが、そもそも HOCON の duration として
+# 不正なので、静かに直すより起動を止めて原因を見せた方がよい。単位の打ち間違いも
+# ここで落ちる（設定が効かないまま既定値で動き続ける事故を防ぐ）。
+case "$VISIBILITY_TIMEOUT" in
+  *[!0-9\ a-z]*|"")
+    echo "[elasticmq-entrypoint] LOCAL_QUEUE_VISIBILITY_TIMEOUT が不正です: '${VISIBILITY_TIMEOUT}'" >&2
+    echo "[elasticmq-entrypoint] 例: '5 seconds' / '180 seconds' / '3 minutes'" >&2
+    exit 1
+    ;;
+esac
+if ! echo "$VISIBILITY_TIMEOUT" | grep -Eq '^[0-9]+ (millis|milliseconds|s|seconds|m|minutes|h|hours)$'; then
+  echo "[elasticmq-entrypoint] LOCAL_QUEUE_VISIBILITY_TIMEOUT が不正です: '${VISIBILITY_TIMEOUT}'" >&2
+  echo "[elasticmq-entrypoint] 例: '5 seconds' / '180 seconds' / '3 minutes'" >&2
+  exit 1
+fi
+
 # 生成先を /tmp にするのは、ベースイメージが非 root ユーザーで動作し
 # /opt へ書き込めないため。
 RENDERED_CONFIG=/tmp/elasticmq.conf

@@ -94,9 +94,12 @@ echo "[integration] 統合テストを実行します"
 # デタッチして実行し、終了を待ってからログをまとめて取り出す。
 #
 # --no-deps: 依存は上の `up --wait` で起動済み。ここで再起動させない。
+#
+# stderr は捨てない。コンテナ ID は stdout にしか出ないため取り違えの心配はなく、
+# 起動に失敗したときの compose 側の診断が読めなくなる方が痛い。
 # shellcheck disable=SC2086 # PYTEST_ARGS は複数引数として展開させる
 test_container="$(compose run -d --no-deps test \
-  python -m pytest -v --color=no ${PYTEST_ARGS:-} 2>/dev/null)"
+  python -m pytest -v --color=no ${PYTEST_ARGS:-})"
 
 if [[ -z "$test_container" ]]; then
   echo "[integration] テストコンテナを起動できませんでした。" >&2

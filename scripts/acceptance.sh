@@ -95,8 +95,12 @@ if [[ "${ACCEPTANCE_SKIP_INTEGRATION:-0}" == "1" ]]; then
   echo "[acceptance] (integration) skip: ACCEPTANCE_SKIP_INTEGRATION=1"
 elif [[ ! -f .devcontainer/compose.app.yaml ]]; then
   echo "[acceptance] (integration) skip: .devcontainer/compose.app.yaml not found"
-elif ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
-  echo "[acceptance] (integration) skip: docker が使えません"
+elif ! command -v docker >/dev/null 2>&1 \
+  || ! docker compose version >/dev/null 2>&1 \
+  || ! docker info >/dev/null 2>&1; then
+  # compose v2 プラグインの有無まで見る。docker CLI だけあって compose が無い環境では、
+  # integration-test.sh が exit 1 で落ちて acceptance 全体が失敗してしまう。
+  echo "[acceptance] (integration) skip: docker / docker compose (v2) が使えません"
 else
   echo "[acceptance] (integration) bash scripts/integration-test.sh"
   bash scripts/integration-test.sh

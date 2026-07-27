@@ -41,10 +41,43 @@ AWS_REGION = os.environ.get("AWS_REGION", "ap-northeast-1")
 LAMBDA_ENDPOINT = os.environ.get("LOCAL_WORKER_LAMBDA_ENDPOINT", "http://worker:8080")
 # 本番 worker のタイムアウト（terraform: local.worker_timeout = 300）に合わせる。
 LAMBDA_TIMEOUT_SECONDS = env_int("LOCAL_WORKER_LAMBDA_TIMEOUT", 300)
-# terraform: modules/worker の batch_size 既定値。
-BATCH_SIZE = env_int("LOCAL_ESM_BATCH_SIZE", 1)
-# ロングポーリングの待機秒数。空ポーリングの CPU 消費を抑える。
-WAIT_TIME_SECONDS = env_int("LOCAL_ESM_WAIT_TIME_SECONDS", 2)
+
+def _clamp(value: int, low: int, high: int, name: str) -> int:
+    """値を SQS API が受け付ける範囲へ丸める。範囲外なら警告を残す。
+
+    範囲外のまま ``receive_message`` を呼ぶと ClientError で毎回落ち、ポーリング
+    ループが空回りする。原因が受信エラーのログにしか現れず追いにくいので、
+    起動時に丸めて何が起きたかを明示する。
+
+    Args:
+        value: 環境変数から読んだ値。
+        low: 許容する最小値。
+        high: 許容する最大値。
+        name: 警告に出す環境変数名。
+
+    Returns:
+        範囲内へ丸めた値。
+    """
+
+    clamped = min(max(value, low), high)
+    if clamped != value:
+        logger.warning(
+            "%s=%d は SQS の許容範囲 %d〜%d の外のため %d へ丸めました",
+            name,
+            value,
+            low,
+            high,
+            clamped,
+        )
+    return clamped
+
+
+# terraform: modules/worker の batch_size 既定値。SQS の MaxNumberOfMessages は 1〜10。
+BATCH_SIZE = _clamp(env_int("LOCAL_ESM_BATCH_SIZE", 1), 1, 10, "LOCAL_ESM_BATCH_SIZE")
+# ロングポーリングの待機秒数。空ポーリングの CPU 消費を抑える。SQS の上限は 20 秒。
+WAIT_TIME_SECONDS = _clamp(
+    env_int("LOCAL_ESM_WAIT_TIME_SECONDS", 2), 0, 20, "LOCAL_ESM_WAIT_TIME_SECONDS"
+)
 # 受信エラー時の再試行間隔（秒）。
 RETRY_INTERVAL_SECONDS = 1.0
 
