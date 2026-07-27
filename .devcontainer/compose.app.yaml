@@ -13,11 +13,16 @@
 #
 #   docker compose -f .devcontainer/compose.app.yaml up -d --wait
 #   bash scripts/integration-test.sh
-#   docker compose -f .devcontainer/compose.app.yaml down -v
+#   docker compose -f .devcontainer/compose.app.yaml stop
+#   docker compose -f .devcontainer/compose.app.yaml rm -f -v
 #
-# ただし devcontainer 内から up する場合は、VS Code が使うプロジェクト名
-# （-p ojos-code-narrative_devcontainer）へ合わせないと同じサービスが
-# もう一組立ち上がります。scripts/integration-test.sh はこれを自動で合わせます。
+# 下の `name:` が devcontainer 経由でも効くため、-p を付けなくても VS Code が
+# 起動したのと同じプロジェクトへ入ります（同じサービスのもう一組は立ち上がりません）。
+#
+# ただし devcontainer 内から `down` は使わないでください。プロジェクトを app と
+# 共有しているため、down はコンテナを消したあとネットワークの削除で失敗します
+# （app が繋がったままなので落とせません）。破棄は上記の stop + rm で行います。
+# scripts/integration-test.sh も同じ形にしています。
 #
 # 本番との対応:
 #   api / worker  : 本番と同一の Dockerfile から作ったイメージを
@@ -27,8 +32,13 @@
 #   dynamodb/queue: DynamoDB Local と ElasticMQ（SQS 互換）。
 #   *-stub        : ローカル代替が存在しない外部サービス（Bedrock / GitHub）。
 
-# devcontainer 経由では VS Code が -p で上書きする。素のホストで単独利用する
-# ときの既定名としてのみ効く。
+# このプロジェクト名は devcontainer 経由でも効く（VS Code は -p で上書きしない）。
+# 素のホストから単独で叩いたときと同じ名前に落ちるため、起動経路によってプロジェクトが
+# 分かれることがない。
+#
+# 一方で、プロジェクト名は named volume の実体名の一部にもなる。この行を変えると
+# compose.yaml の永続化ボリュームが別物へ切り替わる関係にあったため、そちらは
+# ボリューム名を明示して identity を切り離した（#78）。
 name: code-narrative-local
 
 x-aws-common: &aws-common

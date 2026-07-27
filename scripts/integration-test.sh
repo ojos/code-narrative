@@ -41,10 +41,14 @@ if [[ ! -f "$COMPOSE_APP_FILE" ]]; then
   exit 1
 fi
 
-# devcontainer の中で動いている場合、VS Code が使っているのと同じ compose
-# プロジェクト名へ合わせる。合わせないと、既に起動している各サービスの
-# **もう一組**が別プロジェクトとして立ち上がる（devcontainer.json が
-# compose.yaml と compose.app.yaml を合成しているため）。
+# devcontainer の中で動いている場合、自分が属している compose プロジェクト名へ合わせる。
+# 一致しないと、既に起動している各サービスの**もう一組**が別プロジェクトとして立ち上がる
+# （devcontainer.json が compose.yaml と compose.app.yaml を合成しているため）。
+#
+# 現状は compose.app.yaml の top-level `name:` が devcontainer 経由でも効くので、-p を
+# 付けなくても一致する。それでもここで明示するのは、プロジェクト名の決定を compose の
+# 解決順序（-p > COMPOSE_PROJECT_NAME > top-level name > ディレクトリ名）へ委ねず、
+# 実際に動いているコンテナのラベルという観測値に固定するため。
 project_args=()
 if [[ -f /.dockerenv ]]; then
   self_project="$(docker inspect "$(hostname)" \
