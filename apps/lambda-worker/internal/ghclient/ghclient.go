@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -24,6 +25,15 @@ import (
 const (
 	defaultAPIBase      = "https://api.github.com"
 	defaultCodeloadBase = "https://codeload.github.com"
+)
+
+// エンドポイントを上書きする環境変数。未設定なら上記の既定値を使う。
+//
+// ローカル環境が GitHub スタブを指すために用いる（AWS SDK の
+// AWS_ENDPOINT_URL_* と同じ考え方）。本番では設定しないため挙動は変わらない。
+const (
+	envAPIBase      = "GITHUB_API_BASE_URL"
+	envCodeloadBase = "GITHUB_CODELOAD_BASE_URL"
 )
 
 // ErrInvalidRepoURL は repo_url が期待形式でない場合に返る。
@@ -78,14 +88,27 @@ type Client struct {
 }
 
 // New は GitHub クライアントを生成する。token が空文字の場合は未認証で動作する。
+//
+// エンドポイントは環境変数 GITHUB_API_BASE_URL / GITHUB_CODELOAD_BASE_URL で
+// 上書きできる。未設定なら実 GitHub を指すため、本番の挙動は変わらない。
 func New(token string) *Client {
 	return &Client{
 		httpClient:     &http.Client{Timeout: 60 * time.Second},
 		downloadClient: &http.Client{},
 		token:          token,
-		apiBase:        defaultAPIBase,
-		codeloadBase:   defaultCodeloadBase,
+		apiBase:        baseFromEnv(envAPIBase, defaultAPIBase),
+		codeloadBase:   baseFromEnv(envCodeloadBase, defaultCodeloadBase),
 	}
+}
+
+// baseFromEnv は環境変数 name のベース URL を返す。未設定・空白のみの場合は
+// fallback を返す。末尾のスラッシュは URL 組み立て時の重複を避けるため除去する。
+func baseFromEnv(name, fallback string) string {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	return strings.TrimRight(value, "/")
 }
 
 // ownerRepoPattern は GitHub が owner / リポジトリ名に許容する文字種。

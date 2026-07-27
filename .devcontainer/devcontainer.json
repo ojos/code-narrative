@@ -1,6 +1,14 @@
 {
   "name": "ojos-code-narrative",
-  "dockerComposeFile": "compose.yaml",
+  // compose.yaml は開発コンテナ(app)、compose.app.yaml はアプリ本体のローカル実行環境。
+  // 2 ファイルを合成することで、app とアプリ各サービスが同じ compose プロジェクト・
+  // 同じネットワークに入る。これにより devcontainer の中から publish 済みポートを
+  // 介さずに `http://apigw:8080` のようなサービス名で直接到達できる。
+  //
+  // 副作用: ワークスペースを開くとアプリのコンテナも一緒に起動し、devcontainer を
+  // リビルドするとアプリのイメージもビルド対象になる。アプリを起動したくない場合は
+  // "runServices": ["app"] を指定する。
+  "dockerComposeFile": ["compose.yaml", "compose.app.yaml"],
   "service": "app",
   "workspaceFolder": "/workspaces/ojos-code-narrative",
   "shutdownAction": "stopCompose",

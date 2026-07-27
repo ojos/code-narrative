@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -171,5 +172,49 @@ func TestHTTPError_Classification(t *testing.T) {
 	// 非 HTTPError（ネットワーク等）は恒久ではない（一時障害扱い）。
 	if IsPermanent(errors.New("network")) {
 		t.Error("非 HTTPError は恒久であってはならない")
+	}
+}
+
+func TestNew_UsesDefaultEndpointsWhenEnvUnset(t *testing.T) {
+	// 環境変数が無い＝本番と同じ条件。実 GitHub を指すことを固定する。
+	t.Setenv(envAPIBase, "")
+	t.Setenv(envCodeloadBase, "")
+	os.Unsetenv(envAPIBase)
+	os.Unsetenv(envCodeloadBase)
+
+	c := New("")
+	if c.apiBase != defaultAPIBase {
+		t.Errorf("apiBase = %q, want %q", c.apiBase, defaultAPIBase)
+	}
+	if c.codeloadBase != defaultCodeloadBase {
+		t.Errorf("codeloadBase = %q, want %q", c.codeloadBase, defaultCodeloadBase)
+	}
+}
+
+func TestNew_OverridesEndpointsFromEnv(t *testing.T) {
+	// ローカル環境がスタブを指すための経路。末尾スラッシュは除去される。
+	t.Setenv(envAPIBase, "http://github-stub:8080/")
+	t.Setenv(envCodeloadBase, "http://github-stub:8080")
+
+	c := New("")
+	if want := "http://github-stub:8080"; c.apiBase != want {
+		t.Errorf("apiBase = %q, want %q", c.apiBase, want)
+	}
+	if want := "http://github-stub:8080"; c.codeloadBase != want {
+		t.Errorf("codeloadBase = %q, want %q", c.codeloadBase, want)
+	}
+}
+
+func TestNew_BlankEnvFallsBackToDefault(t *testing.T) {
+	// 空白のみの値は「未設定」と同じ扱いにし、不正なベース URL を組み立てない。
+	t.Setenv(envAPIBase, "   ")
+	t.Setenv(envCodeloadBase, "")
+
+	c := New("")
+	if c.apiBase != defaultAPIBase {
+		t.Errorf("apiBase = %q, want %q", c.apiBase, defaultAPIBase)
+	}
+	if c.codeloadBase != defaultCodeloadBase {
+		t.Errorf("codeloadBase = %q, want %q", c.codeloadBase, defaultCodeloadBase)
 	}
 }

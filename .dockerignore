@@ -1,0 +1,24 @@
+# リポジトリルートをビルドコンテキストにする local/emulator/Dockerfile 用の除外設定。
+#
+# apps/api と apps/lambda-worker のイメージは各ディレクトリを
+# コンテキストにするため、この設定の影響を受けない。
+
+.git
+.github
+.devcontainer
+.claude
+.ai-playbook
+terraform
+docs
+
+# 依存・生成物（イメージには不要で、転送量だけが増える）
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+
+# 機密（万一の混入を防ぐ。値のない雛形は除外しない）
+.env
+.env.*
+!.env.example
