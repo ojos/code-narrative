@@ -2,7 +2,7 @@
 
 - 起票日: 2026-07-26
 - 起票者ロール: intake-manager
-- ステータス: **完了**（2026-07-26。PR #73 を squash merge / main `9f2eb79`。acceptance 参照）
+- ステータス: **完了**（2026-07-26 に PR #73 を squash merge / main `9f2eb79`、2026-07-27 に本番反映済み。acceptance 参照）
 - 起票先: [ojos/code-narrative#72](https://github.com/ojos/code-narrative/issues/72)（`completed` でクローズ）
 
 ## intake 判定
@@ -135,9 +135,16 @@ Cognito Hosted UI は本物を叩けないため `sessionStorage` にトーク�
 | 2 | プリセットボタン押下時の保存を追加した | 計画に無かった経路。`value` への直接代入では `input` が発火せず、プリセットを選んでリロードすると値が失われる。手動確認でこの経路が効いていることを確認済み |
 | 3 | SPEC の追記先は §5 ではなく **§4⑤** | フロントエンド仕様の実際の節番号に合わせた |
 
-### 未了
+### デプロイ
 
-- 本番デプロイは未実施。`deploy` ワークフローが `production` 環境の必須レビュアー承認待ちで停止している（設計どおりのゲート）
+2026-07-27 に `production` 環境を承認し、run [30224979700](https://github.com/ojos/code-narrative/actions/runs/30224979700) が success。ECR 先行 apply → イメージ build/push → 全体 apply → Lambda コード更新 → フロントエンド配信（S3 sync + CloudFront invalidation）まで完走した。
+
+本番での反映確認:
+
+- `https://code-narrative.ojos.jp/js/preferences.js` が 200 で配信され、冒頭の JSDoc が実装と一致する
+- `js/app.js` に保存（`prefs.save`）・復元（`prefs.load`）・ログアウト時破棄（`prefs.clear`）の 3 経路が含まれる
+
+未了項目はない。
 
 ## 関連
 
